@@ -11,29 +11,31 @@
         <button class="btn btn-primary btn-sm" @click="showUserForm = true">+ 添加用户</button>
       </div>
 
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>姓名</th>
-            <th>UserID</th>
-            <th>部门</th>
-            <th style="width:100px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in users" :key="u.id">
-            <td>{{ u.name }}</td>
-            <td><code>{{ u.userid }}</code></td>
-            <td class="text-sm text-muted">{{ u.department_name || '-' }}</td>
-            <td>
-              <button class="btn btn-danger btn-sm" @click="deleteUser(u.id)">删除</button>
-            </td>
-          </tr>
-          <tr v-if="!users.length">
-            <td colspan="4" class="text-center text-muted text-sm">暂无用户数据</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>UserID</th>
+              <th>部门</th>
+              <th style="width:80px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in users" :key="u.id">
+              <td>{{ u.name }}</td>
+              <td><code>{{ u.userid }}</code></td>
+              <td class="text-sm text-muted">{{ u.department_name || '-' }}</td>
+              <td>
+                <button class="btn btn-danger btn-sm" @click="deleteUser(u.id)">删除</button>
+              </td>
+            </tr>
+            <tr v-if="!users.length">
+              <td colspan="4" class="text-center text-muted text-sm">暂无用户数据</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <!-- Add user form -->
       <div v-if="showUserForm" class="card" style="margin-top:16px;padding:16px;background:#f8fafc">
@@ -65,27 +67,29 @@
         <button class="btn btn-primary btn-sm" @click="showDeptForm = true">+ 添加部门</button>
       </div>
 
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>部门名称</th>
-            <th>部门 ID</th>
-            <th style="width:100px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="d in departments" :key="d.id">
-            <td>{{ d.name }}</td>
-            <td><code>{{ d.dept_id }}</code></td>
-            <td>
-              <button class="btn btn-danger btn-sm" @click="deleteDept(d.id)">删除</button>
-            </td>
-          </tr>
-          <tr v-if="!departments.length">
-            <td colspan="3" class="text-center text-muted text-sm">暂无部门数据</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>部门名称</th>
+              <th>部门 ID</th>
+              <th style="width:80px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="d in departments" :key="d.id">
+              <td>{{ d.name }}</td>
+              <td><code>{{ d.dept_id }}</code></td>
+              <td>
+                <button class="btn btn-danger btn-sm" @click="deleteDept(d.id)">删除</button>
+              </td>
+            </tr>
+            <tr v-if="!departments.length">
+              <td colspan="3" class="text-center text-muted text-sm">暂无部门数据</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <!-- Add dept form -->
       <div v-if="showDeptForm" class="card" style="margin-top:16px;padding:16px;background:#f8fafc">

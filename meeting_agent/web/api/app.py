@@ -121,7 +121,10 @@ def push_result(result_id: str) -> Dict[str, Any]:
     dept_map: Dict[str, str] = {d["name"]: str(d["dept_id"]) for d in depts}
 
     # Convert names → IDs, dates → timestamps
-    push_data = convert_result_for_push(raw, user_map, dept_map)
+    try:
+        push_data = convert_result_for_push(raw, user_map, dept_map)
+    except Exception as e:
+        raise HTTPException(500, f"数据转换失败: {e}") from e
 
     # Validate meeting text
     meeting_text = str(push_data.get("meeting", "")).strip()
@@ -133,7 +136,7 @@ def push_result(result_id: str) -> Dict[str, Any]:
     try:
         msg_resp = send_meeting_summary_from_result(push_data) or {}
     except Exception as e:
-        raise HTTPException(500, f"消息推送失败: {e}") from e
+        raise HTTPException(400, f"消息推送失败: {e}") from e
 
     # Push schedules
     schedule_responses: List[Dict[str, Any]] = []

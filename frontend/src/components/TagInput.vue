@@ -1,6 +1,11 @@
 <template>
   <div class="tag-input-wrapper" @click="focusInput">
-    <span v-for="(item, idx) in modelValue" :key="idx" class="tag-item">
+    <span
+      v-for="(item, idx) in modelValue"
+      :key="idx"
+      class="tag-item"
+      :class="{ 'tag-item-invalid': invalidSet.has(String(item)) }"
+    >
       {{ item }}
       <button type="button" class="tag-remove" @click.stop="remove(idx)">&times;</button>
     </span>
@@ -34,6 +39,7 @@ const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   suggestions: { type: Array, default: () => [] },
   placeholder: { type: String, default: '输入或选择...' },
+  invalidValues: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -42,6 +48,7 @@ const inputRef = ref(null)
 const query = ref('')
 const highlightIndex = ref(-1)
 const showSuggestions = ref(false)
+const invalidSet = computed(() => new Set(props.invalidValues.map((x) => String(x))))
 
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()

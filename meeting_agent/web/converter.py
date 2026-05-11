@@ -14,14 +14,33 @@ def _lookup_dept_id(name: str, dept_map: Dict[str, str]) -> str:
     return dept_map.get(name, name)
 
 
-def _parse_datetime_to_timestamp(dt_str: str) -> int:
-    """Convert 'YYYY-MM-DD HH:mm' to Unix timestamp.
-    Returns 0 if the string can't be parsed or is '未明确'.
+def _parse_datetime_to_timestamp(dt_value: Any) -> int:
+    """Convert datetime input to Unix timestamp(seconds).
+
+    Compatible inputs:
+    - int/float/string numeric timestamp
+    - 'YYYY-MM-DD HH:mm' / 'YYYY-MM-DD'
+    - datetime-local string: 'YYYY-MM-DDTHH:mm[:ss]'
+    Returns 0 if value is empty/invalid/'未明确'.
     """
-    cleaned = dt_str.strip()
+    if dt_value is None:
+        return 0
+
+    if isinstance(dt_value, (int, float)):
+        return int(dt_value)
+
+    text = str(dt_value).strip()
+    if not text:
+        return 0
+
+    if text.isdigit():
+        return int(text)
+
+    cleaned = text
     if not cleaned or cleaned in ("未明确", ""):
         return 0
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+    cleaned = cleaned.replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             return int(datetime.strptime(cleaned, fmt).timestamp())
         except ValueError:
