@@ -10,6 +10,15 @@
     <div v-if="error" class="flash flash-error">{{ error }}</div>
 
     <div v-if="flash" class="flash" :class="flashType">{{ flash }}</div>
+    <div v-if="errorDialog.visible" class="dialog-mask" @click.self="closeErrorDialog">
+      <div class="dialog-card">
+        <div class="dialog-title">推送失败</div>
+        <div class="dialog-body">{{ errorDialog.message }}</div>
+        <div class="dialog-actions">
+          <button class="btn btn-primary btn-sm" @click="closeErrorDialog">我知道了</button>
+        </div>
+      </div>
+    </div>
 
     <template v-if="!loading && result">
       <div class="card">
@@ -23,7 +32,7 @@
         </div>
 
         <!-- meeting_date -->
-        <div class="form-group">
+        <div class="form-group" ref="meetingDateRef">
           <label class="form-label">会议时间</label>
           <input
             class="form-input"
@@ -35,7 +44,7 @@
         </div>
 
         <!-- push_user -->
-        <div class="form-group">
+        <div class="form-group" ref="pushUserRef">
           <label class="form-label">推送用户</label>
           <TagInput
             v-model="local.push_user"
@@ -46,7 +55,7 @@
         </div>
 
         <!-- push_dept -->
-        <div class="form-group">
+        <div class="form-group" ref="pushDeptRef">
           <label class="form-label">推送部门</label>
           <TagInput
             v-model="local.push_dept"
@@ -64,16 +73,16 @@
           <button type="button" class="btn btn-outline btn-sm" @click="addSchedule">+ 添加日程</button>
         </div>
 
-        <ScheduleEditor
-          v-for="(item, idx) in local.schedules"
-          :key="idx"
-          :item="item"
-          :index="idx"
-          :userSuggestions="userSuggestions"
-          :invalidOwnerTags="invalidUsers"
-          @update="updateSchedule(idx, $event)"
-          @remove="removeSchedule(idx)"
-        />
+        <div v-for="(item, idx) in local.schedules" :key="idx" :ref="(el) => setScheduleRef(el, idx)">
+          <ScheduleEditor
+            :item="item"
+            :index="idx"
+            :userSuggestions="userSuggestions"
+            :invalidOwnerTags="invalidUsers"
+            @update="updateSchedule(idx, $event)"
+            @remove="removeSchedule(idx)"
+          />
+        </div>
 
         <div v-if="!local.schedules.length" class="text-center text-muted text-sm" style="padding:16px 0">
           暂无日程安排
@@ -81,7 +90,7 @@
       </div>
 
       <!-- Meeting content -->
-      <div class="card">
+      <div class="card" ref="meetingContentRef">
         <label class="form-label">会议纪要内容</label>
         <textarea class="form-textarea" v-model="local.meeting" rows="15" style="font-size:14px;line-height:1.7"></textarea>
       </div>
@@ -94,7 +103,7 @@
         <button
           class="btn btn-success"
           @click="push"
-          :disabled="pushing"
+          :disabled="pushing || !canPushBasic"
           v-if="result.status !== 'pushed'"
         >
           {{ pushing ? '推送中...' : '推送到企业微信' }}
@@ -121,6 +130,15 @@ const saving = ref(false)
 const pushing = ref(false)
 const invalidUsers = ref([])
 const invalidDepts = ref([])
+const meetingDateRef = ref(null)
+const pushUserRef = ref(null)
+const pushDeptRef = ref(null)
+const meetingContentRef = ref(null)
+const scheduleRefs = ref({})
+const errorDialog = reactive({
+  visible: false,
+  message: '',
+})
 
 const result = ref(null)
 const local = reactive({
@@ -145,6 +163,11 @@ const ERROR_MESSAGES = {
 }
 
 const meetingDateInput = computed(() => timestampToDateTimeLocal(local.meeting_date))
+const canPushBasic = computed(() => {
+  const hasTarget = local.push_user.length > 0 || local.push_dept.length > 0
+  const hasMeeting = String(local.meeting || '').trim().length > 0
+  return hasTarget && hasMeeting
+})
 
 onMounted(async () => {
   const id = route.params.id
@@ -168,7 +191,7 @@ onMounted(async () => {
     }))
 
     Object.assign(local, {
-      meeting_date: normalizeTimestampValue(data.meeting_date),
+      meeting_date: normalizeTimestampValue(data.meeting_date) || nowTimestamp(),
       push_user: Array.isArray(data.push_user) ? data.push_user : [],
       push_dept: Array.isArray(data.push_dept) ? data.push_dept : [],
       schedules,
@@ -219,7 +242,7 @@ async function save() {
 
 function buildSavePayload() {
   return {
-    meeting_date: local.meeting_date,
+    meeting_date: local.meeting_date || nowTimestamp(),
     push_user: local.push_user,
     push_dept: local.push_dept,
     schedules: local.schedules,
@@ -255,6 +278,63 @@ function normalizeTimestampValue(value) {
   return Number.isFinite(ts) ? ts : ''
 }
 
+function nowTimestamp() {
+  return Math.floor(Date.now() / 1000)
+}
+
+function setScheduleRef(el, idx) {
+  if (el) {
+    scheduleRefs.value[idx] = el
+    return
+  }
+  delete scheduleRefs.value[idx]
+}
+
+function scrollToField(target) {
+  const el = target?.$el || target
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
+
+function openErrorDialog(message, scrollTarget) {
+  errorDialog.message = message
+  errorDialog.visible = true
+  if (scrollTarget) {
+    setTimeout(() => scrollToField(scrollTarget), 0)
+  }
+}
+
+function closeErrorDialog() {
+  errorDialog.visible = false
+}
+
+function validateBeforePush() {
+  if (!(local.push_user.length > 0 || local.push_dept.length > 0)) {
+    return { ok: false, message: '推送用户和推送部门至少填写一项。', target: pushUserRef.value || pushDeptRef.value }
+  }
+  if (!String(local.meeting || '').trim()) {
+    return { ok: false, message: '会议纪要内容不能为空。', target: meetingContentRef.value }
+  }
+
+  const meetingTs = Number(local.meeting_date || nowTimestamp())
+  for (let i = 0; i < local.schedules.length; i += 1) {
+    const item = local.schedules[i]
+    const startTs = Number(item.start_time)
+    const endTs = Number(item.end_time)
+    if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) {
+      return { ok: false, message: `日程 #${i + 1} 时间不完整，请选择开始和结束时间。`, target: scheduleRefs.value[i] }
+    }
+    if (startTs >= endTs) {
+      return { ok: false, message: `日程 #${i + 1} 开始时间必须早于结束时间。`, target: scheduleRefs.value[i] }
+    }
+    if (startTs <= meetingTs || endTs <= meetingTs) {
+      return { ok: false, message: `日程 #${i + 1} 时间必须晚于会议时间。`, target: scheduleRefs.value[i] }
+    }
+  }
+  return { ok: true }
+}
+
 function parseWecomError(raw) {
   const text = String(raw || '')
   const codeMatch = text.match(/errcode=(\d+)/)
@@ -271,6 +351,11 @@ function parseWecomError(raw) {
 }
 
 async function push() {
+  const check = validateBeforePush()
+  if (!check.ok) {
+    openErrorDialog(check.message, check.target)
+    return
+  }
   pushing.value = true
   flash.value = ''
   invalidUsers.value = []
@@ -285,10 +370,47 @@ async function push() {
     const refreshed = await api.getResult(route.params.id)
     result.value = refreshed
   } catch (e) {
-    flash.value = parseWecomError(e.message)
-    flashType.value = 'flash-error'
+    const message = parseWecomError(e.message)
+    openErrorDialog(message, invalidUsers.value.length ? pushUserRef.value : (invalidDepts.value.length ? pushDeptRef.value : null))
   } finally {
     pushing.value = false
   }
 }
 </script>
+
+<style scoped>
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+.dialog-card {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+  padding: 16px;
+}
+.dialog-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #991b1b;
+  margin-bottom: 8px;
+}
+.dialog-body {
+  font-size: 14px;
+  color: #334155;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.dialog-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+</style>
