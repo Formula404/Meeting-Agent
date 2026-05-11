@@ -1,20 +1,24 @@
-<<<<<<< HEAD
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-
-# Virtual environments
-.venv
+.venv/
 .env
-=======
-# gitignore template for LangChain products, e.g., LangGraph, LangSmith
-# website: https://www.langchain.com/
-# website: https://www.langchain.com/langgraph
 
-# LangGraph
+# LangChain / LangGraph
 .langgraph_api/
->>>>>>> 19344637a3d6a1de93ba2cfaf9ef0d698a37b5ca
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Claude
+.claude/
+
+# Data inputs & outputs
+data/input/
+data/output/
+data/meeting_agent.db
