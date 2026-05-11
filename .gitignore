@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -9,3 +10,11 @@ wheels/
 # Virtual environments
 .venv
 .env
+=======
+# gitignore template for LangChain products, e.g., LangGraph, LangSmith
+# website: https://www.langchain.com/
+# website: https://www.langchain.com/langgraph
+
+# LangGraph
+.langgraph_api/
+>>>>>>> 19344637a3d6a1de93ba2cfaf9ef0d698a37b5ca
