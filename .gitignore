@@ -18,7 +18,5 @@ frontend/dist/
 # Claude
 .claude/
 
-# Data inputs & outputs
-data/input/
-data/output/
-data/meeting_agent.db
+# Data inputs, outputs & database (contains actual meeting records)
+data/

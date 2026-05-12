@@ -64,10 +64,12 @@ cd ..
 
 ### 3. 运行
 
+首次运行 Web API 会自动创建 `data/` 目录（含 `input/`、`output/` 子目录和 SQLite 数据库）。
+
 **CLI 模式** — 解析一篇会议记录：
 
 ```bash
-uv run python main.py data/input/你的会议记录.docx
+uv run python main.py 你的会议记录.docx
 ```
 
 结果将打印到终端，同时自动保存到 `data/output/` 目录。
@@ -83,15 +85,6 @@ cd frontend && npm run dev
 ```
 
 浏览器打开 `http://localhost:5173` 即可使用。
-
-## 使用示例
-
-```bash
-uv run python main.py data/input/商场AI导购试点需求讨论会.docx
-uv run python main.py data/input/办公区环境整改与行政后勤保障协调会.docx
-```
-
-测试文件位于 `data/input/` 目录，解析结果输出到 `data/output/` 目录。
 
 ## Web UI 流程
 
@@ -149,10 +142,9 @@ meeting-agent/
 │   │   ├── components/            # 组件：日程编辑器、标签输入
 │   │   └── App.vue
 │   └── package.json
-└── data/
-    ├── input/                     # 待解析的 .docx 文件
-    ├── output/                    # 解析结果 JSON
-    └── meeting_agent.db           # SQLite 数据库（用户、部门、解析记录）
+├── data-example/                  # 示例文件
+│   ├── input/                     # 存放 .docx 的位置示意
+│   └── output/示例结果.json       # 输出格式示例
 ```
 
 ## 企业微信集成（可选）
