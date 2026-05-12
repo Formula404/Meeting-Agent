@@ -39,3 +39,32 @@ class WeComMessageClient(WeComClient):
             "safe": safe,
         }
         return self._request("POST", "/cgi-bin/message/send", data=payload)
+
+    def send_markdown_message(
+        self,
+        *,
+        content: str,
+        to_user: str = "",
+        to_party: str = "",
+        safe: int = 0,
+    ) -> Dict[str, Any]:
+        """发送 markdown 消息。
+
+        参数：
+        - to_user: 接收人，多个用 "|" 分隔。
+        - to_party: 接收部门，多个用 "|" 分隔（部门 ID）。
+        - content: markdown 格式的消息正文。
+        - safe: 是否保密消息，0/1。
+        """
+        if not to_user and not to_party:
+            raise ValueError("to_user 和 to_party 不能同时为空。")
+
+        payload = {
+            "touser": to_user,
+            "toparty": to_party,
+            "msgtype": "markdown",
+            "agentid": self.config.agent_id,
+            "markdown": {"content": content},
+            "safe": safe,
+        }
+        return self._request("POST", "/cgi-bin/message/send", data=payload)

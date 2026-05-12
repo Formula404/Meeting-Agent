@@ -108,6 +108,14 @@
         >
           {{ pushing ? '推送中...' : '推送到企业微信' }}
         </button>
+        <button
+          class="btn btn-warning"
+          @click="push"
+          :disabled="pushing || !canPushBasic"
+          v-else
+        >
+          {{ pushing ? '推送中...' : '再次推送' }}
+        </button>
       </div>
     </template>
   </div>
