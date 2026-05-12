@@ -7,8 +7,6 @@ wheels/
 *.egg-info
 .venv/
 .env
-.env.test
-.env.prod
 
 # LangChain / LangGraph
 .langgraph_api/
