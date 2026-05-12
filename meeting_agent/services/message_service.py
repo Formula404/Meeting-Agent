@@ -13,8 +13,8 @@ def format_meeting_markdown(meeting_text: str) -> str:
 
     规则：
     - 第一行（标题）→ ## 标题
-    - "会议时间"行 → **加粗**
-    - 其余段落 → 空行分隔
+    - 会议时间第二行 → **加粗**
+    - 其余段落 → 首行缩进
     """
     lines = meeting_text.strip().split("\n")
     parts = []
@@ -43,8 +43,8 @@ def send_meeting_summary_from_result(
     - 接收人优先用入参 userids，否则使用 result["push_user"]。
     - 接收部门优先用参 dept_ids，否则使用 result["push_dept"]。
     """
-    to_users = list(userids) if userids is not None else list(result.get("push_user", []))
-    to_depts = list(dept_ids) if dept_ids is not None else list(result.get("push_dept", []))
+    to_users = userids if userids is not None else result.get("push_user", [])
+    to_depts = dept_ids if dept_ids is not None else result.get("push_dept", [])
     meeting_text = str(result.get("meeting", "")).strip()
     if not to_users and not to_depts:
         raise ValueError("发送失败：未提供接收目标（push_user/userids 或 push_dept/dept_ids）。")
@@ -54,8 +54,8 @@ def send_meeting_summary_from_result(
     markdown_content = format_meeting_markdown(meeting_text)
     return wecom_message_client.send_markdown_message(
         content=markdown_content,
-        to_user="|".join(map(str, to_users)),
-        to_party="|".join(map(str, to_depts)),
+        to_user="|".join(to_users),
+        to_party="|".join(to_depts),
     )
 
 

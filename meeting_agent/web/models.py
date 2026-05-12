@@ -170,6 +170,16 @@ def update_result(result_id: str, result_data: Dict[str, Any]) -> bool:
         conn.close()
 
 
+def delete_result(result_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute("DELETE FROM extraction_results WHERE id = ?", (result_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def mark_result_pushed(result_id: str) -> bool:
     conn = get_connection()
     try:

@@ -21,6 +21,29 @@ async function request(path, options = {}) {
   return res.json()
 }
 
+async function requestWithStatus(path, options = {}) {
+  const url = `${BASE}${path}`
+  const config = {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  }
+  if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
+    config.body = JSON.stringify(config.body)
+  }
+  if (config.body instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
+
+  const res = await fetch(url, config)
+  let data = null
+  try {
+    data = await res.json()
+  } catch (_) {
+    data = null
+  }
+  return { ok: res.ok, status: res.status, data, statusText: res.statusText }
+}
+
 export default {
   // Extraction
   uploadFile(file) {
@@ -43,6 +66,16 @@ export default {
 
   pushResult(id) {
     return request(`/results/${id}/push`, { method: 'POST' })
+  },
+
+  deleteResult(id) {
+    return requestWithStatus(`/results/${id}`, { method: 'DELETE' }).then(async (resp) => {
+      if (resp.ok) return resp.data
+      if (resp.status === 405) {
+        return request(`/results/${id}/delete`, { method: 'POST' })
+      }
+      throw new Error((resp.data && resp.data.detail) || resp.statusText || `HTTP ${resp.status}`)
+    })
   },
 
   // Users

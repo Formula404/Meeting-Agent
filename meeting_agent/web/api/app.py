@@ -18,6 +18,7 @@ from meeting_agent.web.models import (
     create_result,
     create_user,
     delete_department,
+    delete_result,
     delete_user,
     get_result,
     list_departments,
@@ -99,6 +100,24 @@ def update_extraction_result(result_id: str, body: UpdateResultBody) -> Dict[str
     if not ok:
         raise HTTPException(404, "结果不存在")
     return {"status": "ok"}
+
+
+@router.delete("/results/{result_id}")
+def delete_extraction_result(result_id: str) -> Dict[str, str]:
+    """Delete a result record."""
+    ok = delete_result(result_id)
+    if not ok:
+        raise HTTPException(404, "结果不存在")
+    return {"status": "deleted"}
+
+
+@router.post("/results/{result_id}/delete")
+def delete_extraction_result_compat(result_id: str) -> Dict[str, str]:
+    """Compatibility endpoint for clients/environments that block DELETE."""
+    ok = delete_result(result_id)
+    if not ok:
+        raise HTTPException(404, "结果不存在")
+    return {"status": "deleted"}
 
 
 # ═══════════════════════════════════════════════════════════════════════

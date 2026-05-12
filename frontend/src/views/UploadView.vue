@@ -42,12 +42,13 @@
     </div>
 
     <!-- Step 3: Extracting -->
-    <div v-if="uploading" class="card">
-      <h2 class="card-title">正在解析</h2>
-      <p>正在调用 AI 进行结构化提取，请稍候...</p>
-      <div class="upload-progress">
-        <p class="text-sm text-muted mt-16">文件名：{{ selectedFile?.name }}</p>
+    <div v-if="uploading" class="card" style="position:relative;min-height:140px">
+      <div class="loader">
+        <div class="justify-content-center jimu-primary-loading"></div>
       </div>
+      <p class="text-sm text-muted extracting-hint">
+        AI解析中，请稍后...<br />文件名：{{ selectedFile?.name }}
+      </p>
     </div>
 
     <!-- Step 4: Done -->
@@ -70,7 +71,7 @@
               <th>文件名</th>
               <th>状态</th>
               <th>时间</th>
-              <th></th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -82,8 +83,11 @@
                 </span>
               </td>
               <td class="text-sm text-muted">{{ formatTime(r.created_at) }}</td>
-              <td>
-                <router-link :to="{ name: 'review', params: { id: r.id } }" class="btn btn-outline btn-sm">查看</router-link>
+              <td style="white-space:nowrap">
+                <div class="row-actions">
+                  <router-link :to="{ name: 'review', params: { id: r.id } }" class="btn btn-outline btn-sm">查看</router-link>
+                  <button class="btn btn-outline btn-sm" style="color:#dc2626" @click="handleDelete(r)" :disabled="deletingId === r.id">{{ deletingId === r.id ? '删除中...' : '删除' }}</button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -104,6 +108,7 @@ const error = ref('')
 const resultId = ref(null)
 const selectedFile = ref(null)
 const recentList = ref([])
+const deletingId = ref(null)
 
 onMounted(() => {
   api.listResults().then((list) => { recentList.value = list }).catch(() => {})
@@ -156,6 +161,24 @@ async function startExtract() {
   }
 }
 
+async function handleDelete(record) {
+  if (!confirm(`确认删除「${record.original_filename}」的解析记录？`)) return
+  const targetId = record?.id ?? record?.result_id
+  if (!targetId) {
+    error.value = '删除失败: 缺少记录 ID'
+    return
+  }
+  deletingId.value = targetId
+  try {
+    await api.deleteResult(targetId)
+    recentList.value = recentList.value.filter((r) => (r.id ?? r.result_id) !== targetId)
+  } catch (e) {
+    error.value = `删除失败: ${e.message}`
+  } finally {
+    deletingId.value = null
+  }
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -167,3 +190,74 @@ function formatTime(ts) {
   return new Date(ts + 'Z').toLocaleString('zh-CN', { hour12: false })
 }
 </script>
+
+<style scoped>
+.loader {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+.jimu-primary-loading:before,
+.jimu-primary-loading:after {
+  position: absolute;
+  top: 0;
+  content: '';
+}
+
+.jimu-primary-loading:before {
+  left: -19.992px;
+}
+
+.jimu-primary-loading:after {
+  left: 19.992px;
+  -webkit-animation-delay: 0.32s !important;
+  animation-delay: 0.32s !important;
+}
+
+.jimu-primary-loading:before,
+.jimu-primary-loading:after,
+.jimu-primary-loading {
+  background: #076fe5;
+  -webkit-animation: loading-keys-app-loading 0.8s infinite ease-in-out;
+  animation: loading-keys-app-loading 0.8s infinite ease-in-out;
+  width: 13.6px;
+  height: 32px;
+}
+
+.jimu-primary-loading {
+  text-indent: -9999em;
+  margin: auto;
+  position: absolute;
+  right: calc(50% - 6.8px);
+  top: calc(50% - 16px);
+  -webkit-animation-delay: 0.16s !important;
+  animation-delay: 0.16s !important;
+}
+
+@-webkit-keyframes loading-keys-app-loading {
+  0%, 80%, 100% { opacity: .75; box-shadow: 0 0 #076fe5; height: 32px; }
+  40% { opacity: 1; box-shadow: 0 -8px #076fe5; height: 40px; }
+}
+
+@keyframes loading-keys-app-loading {
+  0%, 80%, 100% { opacity: .75; box-shadow: 0 0 #076fe5; height: 32px; }
+  40% { opacity: 1; box-shadow: 0 -8px #076fe5; height: 40px; }
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extracting-hint {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+</style>
