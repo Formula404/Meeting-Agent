@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 def _get_required_env(name: str) -> str:
