@@ -31,6 +31,24 @@
           </span>
         </div>
 
+        <!-- pdf attachment -->
+        <div class="form-group">
+          <label class="form-label">PDF 附件</label>
+          <div class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
+            <span v-if="pdfFilename" class="text-sm">{{ pdfFilename }}</span>
+            <span v-else class="text-sm text-muted">未上传 PDF 附件</span>
+            <button class="btn btn-outline btn-sm" @click="triggerPdfUpload">上传{{ pdfFilename ? '更换' : '' }}</button>
+          </div>
+          <input
+            ref="pdfInput"
+            type="file"
+            accept=".pdf"
+            style="display:none"
+            @change="onPdfChange"
+          />
+          <div v-if="pdfUploading" class="text-sm text-muted" style="margin-top:4px">上传中...</div>
+        </div>
+
         <!-- meeting_date -->
         <div class="form-group" ref="meetingDateRef">
           <label class="form-label">会议时间</label>
@@ -45,7 +63,10 @@
 
         <!-- push_user -->
         <div class="form-group" ref="pushUserRef">
-          <label class="form-label">推送用户</label>
+          <div class="form-label-row">
+            <label class="form-label" style="margin:0">推送用户</label>
+            <button v-if="local.push_user.length" class="btn btn-text btn-sm" @click="local.push_user = []">清除</button>
+          </div>
           <TagInput
             v-model="local.push_user"
             :suggestions="userSuggestions"
@@ -56,7 +77,10 @@
 
         <!-- push_dept -->
         <div class="form-group" ref="pushDeptRef">
-          <label class="form-label">推送部门</label>
+          <div class="form-label-row">
+            <label class="form-label" style="margin:0">推送部门</label>
+            <button v-if="local.push_dept.length" class="btn btn-text btn-sm" @click="local.push_dept = []">清除</button>
+          </div>
           <TagInput
             v-model="local.push_dept"
             :suggestions="deptSuggestions"
@@ -70,7 +94,10 @@
       <div class="card">
         <div class="flex-between mb-12">
           <span class="card-title" style="margin:0;border:none;padding:0">日程安排</span>
-          <button type="button" class="btn btn-outline btn-sm" @click="addSchedule">+ 添加日程</button>
+          <div class="flex gap-8">
+            <button v-if="local.schedules.length" type="button" class="btn btn-text btn-sm" @click="clearAllSchedules" style="color:#dc2626">清空全部</button>
+            <button type="button" class="btn btn-outline btn-sm" @click="addSchedule">+ 添加日程</button>
+          </div>
         </div>
 
         <div v-for="(item, idx) in local.schedules" :key="idx" :ref="(el) => setScheduleRef(el, idx)">
@@ -92,7 +119,12 @@
       <!-- Meeting content -->
       <div class="card" ref="meetingContentRef">
         <label class="form-label">会议纪要内容</label>
-        <textarea class="form-textarea" v-model="local.meeting" rows="15" style="font-size:14px;line-height:1.7"></textarea>
+        <textarea
+          class="form-textarea"
+          v-model="local.meeting"
+          rows="15"
+          style="font-size:14px;line-height:1.7"
+        ></textarea>
       </div>
 
       <!-- Actions -->
@@ -148,6 +180,36 @@ const errorDialog = reactive({
   message: '',
 })
 
+const pdfInput = ref(null)
+const pdfFilename = ref('')
+const pdfUploading = ref(false)
+
+function triggerPdfUpload() { pdfInput.value?.click() }
+
+async function onPdfChange(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  if (!file.name.endsWith('.pdf')) {
+    flash.value = '仅支持 .pdf 格式'
+    flashType.value = 'flash-error'
+    return
+  }
+  pdfUploading.value = true
+  flash.value = ''
+  try {
+    const data = await api.uploadPdf(route.params.id, file)
+    pdfFilename.value = data.pdf_filename
+    flash.value = 'PDF 附件上传成功'
+    flashType.value = 'flash-success'
+  } catch (err) {
+    flash.value = `PDF 上传失败: ${err.message}`
+    flashType.value = 'flash-error'
+  } finally {
+    pdfUploading.value = false
+    e.target.value = ''
+  }
+}
+
 const result = ref(null)
 const local = reactive({
   meeting_date: '',
@@ -171,6 +233,7 @@ const ERROR_MESSAGES = {
 }
 
 const meetingDateInput = computed(() => timestampToDateTimeLocal(local.meeting_date))
+
 const canPushBasic = computed(() => {
   const hasTarget = local.push_user.length > 0 || local.push_dept.length > 0
   const hasMeeting = String(local.meeting || '').trim().length > 0
@@ -187,6 +250,7 @@ onMounted(async () => {
     ])
     result.value = res
     filename.value = res.original_filename
+    pdfFilename.value = res.pdf_filename || ''
 
     const data = res.result_json
 
@@ -231,6 +295,11 @@ function addSchedule() {
     end_time: '',
     description: '',
   })
+}
+
+function clearAllSchedules() {
+  if (!confirm('确认清空全部日程？')) return
+  local.schedules.splice(0)
 }
 
 async function save() {
@@ -421,4 +490,25 @@ async function push() {
   display: flex;
   justify-content: flex-end;
 }
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: none;
+}
+.btn-text:hover {
+  color: #dc2626;
+}
+
 </style>

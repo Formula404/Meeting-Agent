@@ -44,6 +44,7 @@ def init_db() -> None:
                 CREATE TABLE IF NOT EXISTS extraction_results (
                     id                  TEXT PRIMARY KEY,
                     original_filename   TEXT NOT NULL,
+                    pdf_filename        TEXT DEFAULT '',
                     status              TEXT NOT NULL DEFAULT 'draft'
                                         CHECK(status IN ('draft','pushed')),
                     result_json         TEXT NOT NULL,
@@ -52,6 +53,11 @@ def init_db() -> None:
                     pushed_at           TIMESTAMP
                 );
             """)
+            # Migration: add pdf_filename column if missing (existing DB)
+            try:
+                conn.execute("ALTER TABLE extraction_results ADD COLUMN pdf_filename TEXT DEFAULT ''")
+            except Exception:
+                pass  # column already exists
             conn.commit()
         finally:
             conn.close()

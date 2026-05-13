@@ -118,13 +118,17 @@ def delete_department(dept_pk: int) -> None:
 
 # ── Results ────────────────────────────────────────────────────────────────
 
-def create_result(original_filename: str, result_data: Dict[str, Any]) -> Dict[str, Any]:
+def create_result(
+    original_filename: str,
+    result_data: Dict[str, Any],
+    pdf_filename: str = "",
+) -> Dict[str, Any]:
     result_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO extraction_results (id, original_filename, result_json) VALUES (?, ?, ?)",
-            (result_id, original_filename, json.dumps(result_data, ensure_ascii=False)),
+            "INSERT INTO extraction_results (id, original_filename, pdf_filename, result_json) VALUES (?, ?, ?, ?)",
+            (result_id, original_filename, pdf_filename, json.dumps(result_data, ensure_ascii=False)),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM extraction_results WHERE id = ?", (result_id,)).fetchone()
@@ -137,7 +141,7 @@ def list_results() -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM extraction_results ORDER BY created_at DESC"
+            "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results ORDER BY created_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -186,6 +190,20 @@ def mark_result_pushed(result_id: str) -> bool:
         cur = conn.execute(
             "UPDATE extraction_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (result_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_pdf_filename(result_id: str, pdf_filename: str) -> bool:
+    """更新 extraction_result 的 pdf_filename 字段。"""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE extraction_results SET pdf_filename=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (pdf_filename, result_id),
         )
         conn.commit()
         return cur.rowcount > 0

@@ -18,7 +18,7 @@ uv run python -m meeting_agent.web.run
 cd frontend && npm run dev
 ```
 
-Test inputs are in `data/input/` (`自动发送测试会议.docx` is the latest test file); outputs go to `data/output/` as `*_result.json`.
+Test inputs are in `data/input/` (`自动发送测试会议.docx` is the latest test file); outputs go to `data/output/` as `*_result.json`. Optional PDF attachments go to `data/input/pdfs/`.
 
 ## Project Architecture
 
@@ -37,8 +37,9 @@ main.py (CLI)
       → save to data/output/*_result.json
 ```
 
-Post-extraction (optional, via `test.py`):
-- `services/message_service.py` → send meeting text to WeCom users/departments
+Post-extraction (optional, via web UI push):
+- `services/message_service.py` → send meeting text (markdown) to WeCom users/departments
+- `services/file_service.py` → send attached file (PDF preferred, docx fallback) via WeCom temporary media
 - `services/schedule_service.py` → create WeCom calendar schedules
 
 ### Key Modules
@@ -52,9 +53,11 @@ Post-extraction (optional, via `test.py`):
 | `schemas.py` | Pydantic models: `MeetingOutput`, `ScheduleItem` |
 | `config.py` | Loads .env via python-dotenv into `Settings` dataclass |
 | `integrations/wecom_client.py` | Base WeCom API client (access_token, HTTP, retry) |
-| `integrations/wecom_message_client.py` | Send text messages via WeCom |
+| `integrations/wecom_message_client.py` | Send text/markdown messages via WeCom |
 | `integrations/wecom_calendar_client.py` | Create schedules via WeCom |
+| `integrations/wecom_file_client.py` | Upload temporary media & send file messages via WeCom |
 | `services/message_service.py` | Business logic: push meeting summaries to users/depts |
+| `services/file_service.py` | Business logic: push attached file (PDF/docx) to users/depts |
 | `services/schedule_service.py` | Business logic: batch-create schedules from LLM output |
 | `web/run.py` | FastAPI app entry (uvicorn) |
 | `web/api/app.py` | All REST API routes (extract, results, users, depts) |
@@ -66,26 +69,27 @@ Post-extraction (optional, via `test.py`):
 ### Web UI Flow
 
 ```
-Upload .docx  →  LLM extraction  →  Review & Edit Form  →  Push to WeCom
-                                                    ↓
+Upload .docx [+ optional .pdf]  →  LLM extraction  →  Review & Edit Form  →  Push to WeCom
+                                                      ↓                          ↓
+                                              Change/upload PDF          send_meeting_summary_from_result()
+                                              (via upload-pdf API)       send_file_from_result() (PDF > docx)
+                                                                         create_meeting_schedules_from_result()
+                                                      ↓
                                         Name→userid (SQLite users)
                                         Dept name→dept_id (SQLite departments)
                                         Date string→Unix timestamp
-                                        ↓
-                                        send_meeting_summary_from_result()
-                                        create_meeting_schedules_from_result()
 ```
 
 ### SQLite Database (`data/meeting_agent.db`)
 
 - **users**: `name` (中文姓名), `userid` (企微ID), `department_name` — 约500行
 - **departments**: `name` (部门名称), `dept_id` (企微部门ID)
-- **extraction_results**: `id` (UUID), `result_json` (完整JSON), `status` (draft/pushed)
+- **extraction_results**: `id` (UUID), `original_filename`, `pdf_filename`, `result_json` (完整JSON), `status` (draft/pushed)
 
 ### Key Patterns
 
 - **LLM config** (.env): `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `MODEL_NAME` — currently using DeepSeek via OpenAI-compatible API
 - **Output parsing**: LLM returns markdown-wrapped JSON → `extract_json_from_text()` regex extracts `{...}` → Pydantic validates
-- **WeCom client hierarchy**: `WeComClient` (base, handles token + HTTP) → `WeComMessageClient` / `WeComCalendarClient` (single-method subclasses)
+- **WeCom client hierarchy**: `WeComClient` (base, handles token + HTTP) → `WeComMessageClient` / `WeComCalendarClient` / `WeComFileClient` (single-method subclasses). `WeComFileClient` uses `httpx` for multipart file upload, parent `_request()` for JSON calls.
 - **Service layer**: stateless module-level functions, instantiate WeCom clients at module level
 - **Pydantic fields**: use `default` for single values (can be overridden by LLM), `default_factory` for lists

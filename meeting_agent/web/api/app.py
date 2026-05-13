@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from meeting_agent.schemas import MeetingOutput
+from meeting_agent.services.file_service import send_file_from_result
 from meeting_agent.services.message_service import send_meeting_summary_from_result
 from meeting_agent.services.schedule_service import create_meeting_schedules_from_result
 from meeting_agent.web.converter import convert_result_for_push
@@ -26,6 +28,7 @@ from meeting_agent.web.models import (
     list_users,
     mark_result_pushed,
     update_department,
+    update_pdf_filename,
     update_result,
     update_user,
 )
@@ -37,8 +40,10 @@ init_db()
 router = APIRouter(prefix="/api")
 
 INPUT_DIR = Path("data/input")
+PDF_DIR = INPUT_DIR / "pdfs"
 OUTPUT_DIR = Path("data/output")
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
+PDF_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -47,15 +52,29 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post("/extract")
-async def extract(file: UploadFile = File(...)) -> Dict[str, Any]:
-    """Upload a .docx file, run LLM extraction, return the result."""
+async def extract(
+    file: UploadFile = File(...),
+    pdf_file: Optional[UploadFile] = File(None),
+) -> Dict[str, Any]:
+    """Upload a .docx file (and optional .pdf), run LLM extraction, return the result."""
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(400, "仅支持 .docx 文件")
 
-    # Save uploaded file
+    # Save uploaded docx
     input_path = INPUT_DIR / file.filename
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
+
+    # Save optional PDF
+    pdf_filename = ""
+    if pdf_file and pdf_file.filename:
+        if not pdf_file.filename.endswith(".pdf"):
+            raise HTTPException(400, "PDF 文件格式不正确")
+        # Prefix with result id to avoid collisions
+        pdf_filename = f"{uuid.uuid4().hex}_{pdf_file.filename}"
+        pdf_path = PDF_DIR / pdf_filename
+        with pdf_path.open("wb") as f:
+            shutil.copyfileobj(pdf_file.file, f)
 
     # Run extraction pipeline
     try:
@@ -65,10 +84,15 @@ async def extract(file: UploadFile = File(...)) -> Dict[str, Any]:
         raise HTTPException(500, f"LLM 提取失败: {e}") from e
 
     # Persist result
-    record = create_result(original_filename=file.filename, result_data=result_data)
+    record = create_result(
+        original_filename=file.filename,
+        result_data=result_data,
+        pdf_filename=pdf_filename,
+    )
     return {
         "id": record["id"],
         "original_filename": record["original_filename"],
+        "pdf_filename": pdf_filename,
         "created_at": record["created_at"],
         "result": result_data,
     }
@@ -120,6 +144,29 @@ def delete_extraction_result_compat(result_id: str) -> Dict[str, str]:
     return {"status": "deleted"}
 
 
+@router.post("/results/{result_id}/upload-pdf")
+async def upload_pdf(result_id: str, pdf_file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Upload or replace a PDF file for an existing extraction result."""
+    record = get_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if not pdf_file.filename or not pdf_file.filename.endswith(".pdf"):
+        raise HTTPException(400, "仅支持 .pdf 文件")
+
+    # Save PDF with unique name to avoid collisions
+    pdf_filename = f"{uuid.uuid4().hex}_{pdf_file.filename}"
+    pdf_path = PDF_DIR / pdf_filename
+    with pdf_path.open("wb") as f:
+        shutil.copyfileobj(pdf_file.file, f)
+
+    # Update database
+    ok = update_pdf_filename(result_id, pdf_filename)
+    if not ok:
+        raise HTTPException(404, "结果不存在")
+
+    return {"status": "ok", "pdf_filename": pdf_filename}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Push to WeCom
 # ═══════════════════════════════════════════════════════════════════════
@@ -150,12 +197,24 @@ def push_result(result_id: str) -> Dict[str, Any]:
     if not meeting_text:
         raise HTTPException(400, "meeting 内容为空，无法推送")
 
-    # Push messages
-    msg_resp: Dict[str, Any] = {}
+    # Push messages (may be split into multiple if content exceeds byte limit)
+    msg_responses: list[Dict[str, Any]] = []
     try:
-        msg_resp = send_meeting_summary_from_result(push_data) or {}
+        msg_responses = send_meeting_summary_from_result(push_data) or []
     except Exception as e:
         raise HTTPException(400, f"消息推送失败: {e}") from e
+
+    # Push file (PDF if exists, else docx)
+    file_resp: Dict[str, Any] = {}
+    try:
+        file_resp = send_file_from_result(
+            result=record,
+            userids=push_data.get("push_user", []),
+            dept_ids=push_data.get("push_dept", []),
+        ) or {}
+    except Exception as e:
+        # File sending is non-critical; log but don't block the push
+        file_resp = {"error": str(e)}
 
     # Push schedules
     schedule_responses: List[Dict[str, Any]] = []
@@ -170,7 +229,8 @@ def push_result(result_id: str) -> Dict[str, Any]:
 
     return {
         "status": "pushed",
-        "message_response": msg_resp,
+        "message_response": msg_responses,
+        "file_response": file_resp,
         "schedule_responses": schedule_responses,
     }
 

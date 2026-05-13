@@ -20,3 +20,6 @@ frontend/dist/
 
 # Data inputs, outputs & database (contains actual meeting records)
 data/
+
+# md doc
+md/

@@ -46,10 +46,19 @@ async function requestWithStatus(path, options = {}) {
 
 export default {
   // Extraction
-  uploadFile(file) {
+  uploadFile(file, pdfFile) {
     const form = new FormData()
     form.append('file', file)
+    if (pdfFile) {
+      form.append('pdf_file', pdfFile)
+    }
     return request('/extract', { method: 'POST', body: form })
+  },
+
+  uploadPdf(resultId, pdfFile) {
+    const form = new FormData()
+    form.append('pdf_file', pdfFile)
+    return request(`/results/${resultId}/upload-pdf`, { method: 'POST', body: form })
   },
 
   listResults() {

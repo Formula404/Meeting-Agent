@@ -3,37 +3,79 @@
     <h1 class="page-title">上传会议纪要</h1>
 
     <!-- Step 1: File selection -->
-    <div
-      v-if="!selectedFile"
-      class="upload-zone"
-      :class="{ dragover: dragging }"
-      @dragover.prevent="dragging = true"
-      @dragleave.prevent="dragging = false"
-      @drop.prevent="onDrop"
-      @click="triggerFileInput"
-    >
-      <div class="upload-zone-icon">&#128196;</div>
-      <div class="upload-zone-text">将 .docx 文件拖拽到此处，或点击选择文件</div>
-      <div class="upload-zone-hint">仅支持 .docx 格式</div>
-      <input
-        ref="fileInput"
-        type="file"
-        accept=".docx"
-        style="display:none"
-        @change="onFileChange"
-      />
+    <div v-if="!selectedFile" class="upload-row">
+      <div
+        class="upload-zone upload-zone-docx"
+        :class="{ dragover: draggingDocx }"
+        @dragover.prevent="draggingDocx = true"
+        @dragleave.prevent="draggingDocx = false"
+        @drop.prevent="onDropDocx"
+        @click="triggerDocxInput"
+      >
+        <div class="upload-zone-icon">&#128196;</div>
+        <div class="upload-zone-text">拖拽或点击选择 .docx 文件</div>
+        <div class="upload-zone-hint">必选，仅支持 .docx 格式</div>
+        <input
+          ref="docxInput"
+          type="file"
+          accept=".docx"
+          style="display:none"
+          @change="onDocxChange"
+        />
+      </div>
+
+      <div
+        class="upload-zone upload-zone-pdf"
+        :class="{ dragover: draggingPdf }"
+        @dragover.prevent="draggingPdf = true"
+        @dragleave.prevent="draggingPdf = false"
+        @drop.prevent="onDropPdf"
+        @click="triggerPdfInput"
+      >
+        <div class="upload-zone-icon">&#128196;</div>
+        <div class="upload-zone-text">拖拽或点击选择 PDF 文件</div>
+        <div class="upload-zone-hint">可选，仅支持 .pdf 格式</div>
+        <input
+          ref="pdfInput"
+          type="file"
+          accept=".pdf"
+          style="display:none"
+          @change="onPdfChange"
+        />
+      </div>
     </div>
 
     <!-- Step 2: File selected, waiting for confirm -->
     <div v-else-if="!uploading && !resultId" class="card">
       <h2 class="card-title">已选择文件</h2>
       <div class="form-group">
-        <label class="form-label">文件名</label>
-        <p class="form-input" style="background:#f8fafc;cursor:default">{{ selectedFile.name }}</p>
+        <label class="form-label">会议文件（.docx）</label>
+        <p class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
+          <span>{{ selectedFile.name }}（{{ formatSize(selectedFile.size) }}）</span>
+          <button class="btn btn-outline btn-sm" @click.stop="cancelDocx">更换</button>
+        </p>
       </div>
       <div class="form-group">
-        <label class="form-label">文件大小</label>
-        <p class="form-input" style="background:#f8fafc;cursor:default">{{ formatSize(selectedFile.size) }}</p>
+        <label class="form-label">附件（.pdf）<span class="text-muted text-sm"> （可选）</span></label>
+        <div v-if="pdfFile" class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
+          <span>{{ pdfFile.name }}（{{ formatSize(pdfFile.size) }}）</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-outline btn-sm" @click.stop="triggerPdfInput">更换</button>
+            <button class="btn btn-outline btn-sm" style="color:#dc2626" @click.stop="pdfFile = null">移除</button>
+          </div>
+        </div>
+        <div v-else>
+          <div
+            class="upload-zone upload-zone-inline"
+            :class="{ dragover: draggingPdf }"
+            @dragover.prevent="draggingPdf = true"
+            @dragleave.prevent="draggingPdf = false"
+            @drop.prevent="onDropPdf"
+            @click="triggerPdfInput"
+          >
+            <div class="upload-zone-text">点击或拖拽选择 PDF 附件</div>
+          </div>
+        </div>
       </div>
       <div class="flex gap-8 mt-16">
         <button class="btn btn-primary" @click="startExtract">开始解析</button>
@@ -51,14 +93,6 @@
       </p>
     </div>
 
-    <!-- Step 4: Done -->
-    <div v-if="resultId" class="flash flash-success mt-16 flex-between">
-      <span>解析完成！</span>
-      <router-link :to="{ name: 'review', params: { id: resultId } }" class="btn btn-primary btn-sm">
-        前往审查修改
-      </router-link>
-    </div>
-
     <div v-if="error" class="flash flash-error mt-16">{{ error }}</div>
 
     <!-- History -->
@@ -70,18 +104,20 @@
             <tr>
               <th>文件名</th>
               <th>状态</th>
+              <th>附件</th>
               <th>时间</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="r in recentList" :key="r.id">
-              <td class="truncate" style="max-width:160px">{{ r.original_filename }}</td>
+              <td class="truncate" style="max-width:140px">{{ r.original_filename }}</td>
               <td>
                 <span class="badge" :class="r.status === 'pushed' ? 'badge-pushed' : 'badge-draft'">
                   {{ r.status === 'pushed' ? '已推送' : '草稿' }}
                 </span>
               </td>
+              <td class="text-sm text-muted">{{ r.pdf_filename ? '有' : '—' }}</td>
               <td class="text-sm text-muted">{{ formatTime(r.created_at) }}</td>
               <td style="white-space:nowrap">
                 <div class="row-actions">
@@ -99,14 +135,20 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../api/index.js'
 
-const fileInput = ref(null)
-const dragging = ref(false)
+const router = useRouter()
+
+const docxInput = ref(null)
+const pdfInput = ref(null)
+const draggingDocx = ref(false)
+const draggingPdf = ref(false)
 const uploading = ref(false)
 const error = ref('')
 const resultId = ref(null)
 const selectedFile = ref(null)
+const pdfFile = ref(null)
 const recentList = ref([])
 const deletingId = ref(null)
 
@@ -114,22 +156,34 @@ onMounted(() => {
   api.listResults().then((list) => { recentList.value = list }).catch(() => {})
 })
 
-function triggerFileInput() { fileInput.value?.click() }
+function triggerDocxInput() { docxInput.value?.click() }
+function triggerPdfInput() { pdfInput.value?.click() }
 
-function onDrop(e) {
-  dragging.value = false
+function onDropDocx(e) {
+  draggingDocx.value = false
   const file = e.dataTransfer.files[0]
-  if (file) setFile(file)
+  if (file) setDocxFile(file)
 }
 
-function onFileChange(e) {
+function onDropPdf(e) {
+  draggingPdf.value = false
+  const file = e.dataTransfer.files[0]
+  if (file) setPdfFile(file)
+}
+
+function onDocxChange(e) {
   const file = e.target.files[0]
-  if (file) setFile(file)
-  // Reset so re-selecting the same file triggers change again
+  if (file) setDocxFile(file)
   e.target.value = ''
 }
 
-function setFile(file) {
+function onPdfChange(e) {
+  const file = e.target.files[0]
+  if (file) setPdfFile(file)
+  e.target.value = ''
+}
+
+function setDocxFile(file) {
   if (!file.name.endsWith('.docx')) {
     error.value = '仅支持 .docx 格式'
     return
@@ -139,8 +193,23 @@ function setFile(file) {
   selectedFile.value = file
 }
 
+function setPdfFile(file) {
+  if (!file.name.endsWith('.pdf')) {
+    error.value = '仅支持 .pdf 格式'
+    return
+  }
+  error.value = ''
+  pdfFile.value = file
+}
+
+function cancelDocx() {
+  selectedFile.value = null
+  error.value = ''
+}
+
 function cancelFile() {
   selectedFile.value = null
+  pdfFile.value = null
   error.value = ''
 }
 
@@ -150,10 +219,13 @@ async function startExtract() {
   error.value = ''
   resultId.value = null
   try {
-    const data = await api.uploadFile(selectedFile.value)
+    const data = await api.uploadFile(selectedFile.value, pdfFile.value)
     resultId.value = data.id
     selectedFile.value = null
+    pdfFile.value = null
     recentList.value = await api.listResults()
+    // Auto-navigate to review page
+    router.push({ name: 'review', params: { id: data.id } })
   } catch (e) {
     error.value = e.message
   } finally {
@@ -259,5 +331,79 @@ function formatTime(ts) {
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
+}
+
+/* Two-column upload zones on desktop */
+.upload-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .upload-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.upload-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 36px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fafbfc;
+}
+
+@media (min-width: 640px) {
+  .upload-zone { padding: 48px 24px; }
+}
+
+.upload-zone:hover,
+.upload-zone.dragover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.upload-zone-pdf {
+  border-color: #d1d5db;
+}
+
+.upload-zone-pdf:hover,
+.upload-zone-pdf.dragover {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.upload-zone-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+  opacity: 0.4;
+}
+
+@media (min-width: 640px) {
+  .upload-zone-icon { font-size: 40px; margin-bottom: 12px; }
+}
+
+.upload-zone-text {
+  font-size: 14px;
+  color: #64748b;
+}
+
+@media (min-width: 640px) {
+  .upload-zone-text { font-size: 15px; }
+}
+
+.upload-zone-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* Inline upload zone inside the "selected" card */
+.upload-zone-inline {
+  padding: 16px;
+  border-style: dashed;
 }
 </style>
