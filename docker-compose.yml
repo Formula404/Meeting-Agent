@@ -1,0 +1,12 @@
+services:
+  meeting-agent:
+    build: .
+    container_name: meeting-agent
+    ports:
+      - "8000:8000"
+    volumes:
+      # SQLite 数据库持久化
+      - ./data:/app/data
+      # .env 配置（API Key 等敏感信息不打包进镜像）
+      - ./.env:/app/.env
+    restart: unless-stopped
