@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+from psycopg2.errors import UniqueViolation
 
 from meeting_agent.web.database import get_connection
 
@@ -24,13 +25,14 @@ def create_user(name: str, userid: str, department_name: str = "") -> Dict[str, 
     conn = get_connection()
     try:
         cur = conn.execute(
-            "INSERT INTO users (name, userid, department_name) VALUES (?, ?, ?)",
+            "INSERT INTO users (name, userid, department_name) VALUES (%s, %s, %s) RETURNING id",
             (name.strip(), userid.strip(), department_name.strip()),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+        row_id = cur.fetchone()["id"]
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (row_id,)).fetchone()
         return dict(row)
-    except sqlite3.IntegrityError as e:
+    except UniqueViolation as e:
         raise ValueError(f"用户已存在或 userid 重复: {e}") from e
     finally:
         conn.close()
@@ -40,15 +42,15 @@ def update_user(user_id: int, name: str, userid: str, department_name: str = "")
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE users SET name=?, userid=?, department_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE users SET name=%s, userid=%s, department_name=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (name.strip(), userid.strip(), department_name.strip(), user_id),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
         if not row:
             raise ValueError(f"用户 id={user_id} 不存在")
         return dict(row)
-    except sqlite3.IntegrityError as e:
+    except UniqueViolation as e:
         raise ValueError(f"更新失败: {e}") from e
     finally:
         conn.close()
@@ -57,7 +59,7 @@ def update_user(user_id: int, name: str, userid: str, department_name: str = "")
 def delete_user(user_id: int) -> None:
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = %s", (user_id,))
         conn.commit()
     finally:
         conn.close()
@@ -78,13 +80,14 @@ def create_department(name: str, dept_id: int) -> Dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "INSERT INTO departments (name, dept_id) VALUES (?, ?)",
+            "INSERT INTO departments (name, dept_id) VALUES (%s, %s) RETURNING id",
             (name.strip(), dept_id),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM departments WHERE id = ?", (cur.lastrowid,)).fetchone()
+        row_id = cur.fetchone()["id"]
+        row = conn.execute("SELECT * FROM departments WHERE id = %s", (row_id,)).fetchone()
         return dict(row)
-    except sqlite3.IntegrityError as e:
+    except UniqueViolation as e:
         raise ValueError(f"部门已存在或 dept_id 重复: {e}") from e
     finally:
         conn.close()
@@ -94,15 +97,15 @@ def update_department(dept_pk: int, name: str, dept_id: int) -> Dict[str, Any]:
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE departments SET name=?, dept_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE departments SET name=%s, dept_id=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (name.strip(), dept_id, dept_pk),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM departments WHERE id = ?", (dept_pk,)).fetchone()
+        row = conn.execute("SELECT * FROM departments WHERE id = %s", (dept_pk,)).fetchone()
         if not row:
             raise ValueError(f"部门 id={dept_pk} 不存在")
         return dict(row)
-    except sqlite3.IntegrityError as e:
+    except UniqueViolation as e:
         raise ValueError(f"更新失败: {e}") from e
     finally:
         conn.close()
@@ -111,7 +114,7 @@ def update_department(dept_pk: int, name: str, dept_id: int) -> Dict[str, Any]:
 def delete_department(dept_pk: int) -> None:
     conn = get_connection()
     try:
-        conn.execute("DELETE FROM departments WHERE id = ?", (dept_pk,))
+        conn.execute("DELETE FROM departments WHERE id = %s", (dept_pk,))
         conn.commit()
     finally:
         conn.close()
@@ -128,11 +131,11 @@ def create_result(
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO extraction_results (id, original_filename, pdf_filename, result_json) VALUES (?, ?, ?, ?)",
+            "INSERT INTO extraction_results (id, original_filename, pdf_filename, result_json) VALUES (%s, %s, %s, %s)",
             (result_id, original_filename, pdf_filename, json.dumps(result_data, ensure_ascii=False)),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM extraction_results WHERE id = ?", (result_id,)).fetchone()
+        row = conn.execute("SELECT * FROM extraction_results WHERE id = %s", (result_id,)).fetchone()
         return dict(row)
     finally:
         conn.close()
@@ -152,7 +155,7 @@ def list_results() -> List[Dict[str, Any]]:
 def get_result(result_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM extraction_results WHERE id = ?", (result_id,)).fetchone()
+        row = conn.execute("SELECT * FROM extraction_results WHERE id = %s", (result_id,)).fetchone()
         if row:
             d = dict(row)
             d["result_json"] = json.loads(d["result_json"])
@@ -166,7 +169,7 @@ def update_result(result_id: str, result_data: Dict[str, Any]) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE extraction_results SET result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE extraction_results SET result_json=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (json.dumps(result_data, ensure_ascii=False), result_id),
         )
         conn.commit()
@@ -178,7 +181,7 @@ def update_result(result_id: str, result_data: Dict[str, Any]) -> bool:
 def delete_result(result_id: str) -> bool:
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM extraction_results WHERE id = ?", (result_id,))
+        cur = conn.execute("DELETE FROM extraction_results WHERE id = %s", (result_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -189,7 +192,7 @@ def mark_result_pushed(result_id: str) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE extraction_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE extraction_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (result_id,),
         )
         conn.commit()
@@ -203,7 +206,7 @@ def update_pdf_filename(result_id: str, pdf_filename: str) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE extraction_results SET pdf_filename=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE extraction_results SET pdf_filename=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (pdf_filename, result_id),
         )
         conn.commit()
@@ -223,11 +226,11 @@ def create_transcription_result(
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO transcription_results (id, original_filename, user_prompt, result_json) VALUES (?, ?, ?, ?)",
+            "INSERT INTO transcription_results (id, original_filename, user_prompt, result_json) VALUES (%s, %s, %s, %s)",
             (result_id, original_filename, user_prompt, json.dumps(result_data, ensure_ascii=False)),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM transcription_results WHERE id = ?", (result_id,)).fetchone()
+        row = conn.execute("SELECT * FROM transcription_results WHERE id = %s", (result_id,)).fetchone()
         return dict(row)
     finally:
         conn.close()
@@ -247,7 +250,7 @@ def list_transcription_results() -> List[Dict[str, Any]]:
 def get_transcription_result(result_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM transcription_results WHERE id = ?", (result_id,)).fetchone()
+        row = conn.execute("SELECT * FROM transcription_results WHERE id = %s", (result_id,)).fetchone()
         if row:
             d = dict(row)
             d["result_json"] = json.loads(d["result_json"])
@@ -261,7 +264,7 @@ def update_transcription_result(result_id: str, result_data: Dict[str, Any]) -> 
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE transcription_results SET result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE transcription_results SET result_json=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (json.dumps(result_data, ensure_ascii=False), result_id),
         )
         conn.commit()
@@ -273,7 +276,7 @@ def update_transcription_result(result_id: str, result_data: Dict[str, Any]) -> 
 def delete_transcription_result(result_id: str) -> bool:
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM transcription_results WHERE id = ?", (result_id,))
+        cur = conn.execute("DELETE FROM transcription_results WHERE id = %s", (result_id,))
         conn.commit()
         return cur.rowcount > 0
     finally:
@@ -284,7 +287,7 @@ def mark_transcription_result_pushed(result_id: str) -> bool:
     conn = get_connection()
     try:
         cur = conn.execute(
-            "UPDATE transcription_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            "UPDATE transcription_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
             (result_id,),
         )
         conn.commit()
