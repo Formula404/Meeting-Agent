@@ -52,7 +52,9 @@ def migrate_table(pg_conn, sqlite_conn, table: str, columns: list[str]):
         return
 
     # Truncate PostgreSQL table
-    pg_conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+    pg_cur = pg_conn.cursor()
+    pg_cur.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")
+    pg_cur.close()
 
     # Build INSERT statement
     placeholders = ", ".join(["%s"] * len(columns))
