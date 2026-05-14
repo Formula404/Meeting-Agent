@@ -1,8 +1,16 @@
-﻿<template>
+<template>
   <div class="schedule-card">
     <div class="schedule-card-header">
-      <span class="schedule-card-title">日程 #{{ index + 1 }}</span>
-      <button type="button" class="btn btn-danger btn-sm" @click="$emit('remove')">删除</button>
+      <span class="schedule-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        日程 #{{ index + 1 }}
+      </span>
+      <button type="button" class="btn btn-ghost btn-sm btn-danger-text" @click="$emit('remove')">删除</button>
     </div>
     <div class="form-group">
       <label class="form-label">标题</label>
@@ -111,17 +119,17 @@ function onTimeInput(field, value) {
 
 <style scoped>
 .field-required {
-  border-color: #dc2626 !important;
+  border-color: var(--danger) !important;
 }
 
 .field-required:focus,
 .schedule-tag-input.field-required:focus-within {
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
 }
 
 .field-error {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #dc2626;
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--danger);
 }
 </style>

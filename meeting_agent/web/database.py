@@ -52,6 +52,18 @@ def init_db() -> None:
                     updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     pushed_at           TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS transcription_results (
+                    id                  TEXT PRIMARY KEY,
+                    original_filename   TEXT NOT NULL,
+                    user_prompt         TEXT NOT NULL DEFAULT '',
+                    status              TEXT NOT NULL DEFAULT 'draft'
+                                        CHECK(status IN ('draft','pushed')),
+                    result_json         TEXT NOT NULL,
+                    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    pushed_at           TIMESTAMP
+                );
             """)
             # Migration: add pdf_filename column if missing (existing DB)
             try:

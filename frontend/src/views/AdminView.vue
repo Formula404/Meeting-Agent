@@ -1,13 +1,27 @@
 <template>
   <div>
-    <h1 class="page-title">用户与部门管理</h1>
+    <h1 class="page-title">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+      用户与部门管理
+    </h1>
 
     <div v-if="flash" class="flash" :class="flashType">{{ flash }}</div>
 
     <!-- ── Users ── -->
     <div class="card">
-      <div class="flex-between mb-12">
-        <h2 class="card-title" style="margin:0;border:none;padding:0">用户列表</h2>
+      <div class="flex-between mb-4">
+        <h2 class="card-title" style="margin:0;border:none;padding:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          用户列表
+        </h2>
         <button class="btn btn-primary btn-sm" @click="showUserForm = true">+ 添加用户</button>
       </div>
 
@@ -23,22 +37,22 @@
           </thead>
           <tbody>
             <tr v-for="u in users" :key="u.id">
-              <td>{{ u.name }}</td>
+              <td><span style="font-weight:500">{{ u.name }}</span></td>
               <td><code>{{ u.userid }}</code></td>
               <td class="text-sm text-muted">{{ u.department_name || '-' }}</td>
               <td>
-                <button class="btn btn-danger btn-sm" @click="deleteUser(u.id)">删除</button>
+                <button class="btn btn-ghost btn-sm btn-danger-text" @click="deleteUser(u.id)">删除</button>
               </td>
             </tr>
             <tr v-if="!users.length">
-              <td colspan="4" class="text-center text-muted text-sm">暂无用户数据</td>
+              <td colspan="4" class="text-center text-muted text-sm" style="padding:32px 0">暂无用户数据</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Add user form -->
-      <div v-if="showUserForm" class="card" style="margin-top:16px;padding:16px;background:#f8fafc">
+      <div v-if="showUserForm" class="inline-form">
         <div class="schedule-grid">
           <div class="form-group">
             <label class="form-label">姓名</label>
@@ -53,7 +67,7 @@
             <input class="form-input" v-model="userForm.department_name" placeholder="所属部门" />
           </div>
         </div>
-        <div class="flex gap-8">
+        <div class="flex gap-2">
           <button class="btn btn-primary btn-sm" @click="addUser">保存</button>
           <button class="btn btn-outline btn-sm" @click="showUserForm = false">取消</button>
         </div>
@@ -62,8 +76,15 @@
 
     <!-- ── Departments ── -->
     <div class="card">
-      <div class="flex-between mb-12">
-        <h2 class="card-title" style="margin:0;border:none;padding:0">部门列表</h2>
+      <div class="flex-between mb-4">
+        <h2 class="card-title" style="margin:0;border:none;padding:0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          部门列表
+        </h2>
         <button class="btn btn-primary btn-sm" @click="showDeptForm = true">+ 添加部门</button>
       </div>
 
@@ -78,21 +99,21 @@
           </thead>
           <tbody>
             <tr v-for="d in departments" :key="d.id">
-              <td>{{ d.name }}</td>
+              <td><span style="font-weight:500">{{ d.name }}</span></td>
               <td><code>{{ d.dept_id }}</code></td>
               <td>
-                <button class="btn btn-danger btn-sm" @click="deleteDept(d.id)">删除</button>
+                <button class="btn btn-ghost btn-sm btn-danger-text" @click="deleteDept(d.id)">删除</button>
               </td>
             </tr>
             <tr v-if="!departments.length">
-              <td colspan="3" class="text-center text-muted text-sm">暂无部门数据</td>
+              <td colspan="3" class="text-center text-muted text-sm" style="padding:32px 0">暂无部门数据</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Add dept form -->
-      <div v-if="showDeptForm" class="card" style="margin-top:16px;padding:16px;background:#f8fafc">
+      <div v-if="showDeptForm" class="inline-form">
         <div class="schedule-grid">
           <div class="form-group">
             <label class="form-label">部门名称</label>
@@ -103,7 +124,7 @@
             <input class="form-input" v-model.number="deptForm.dept_id" placeholder="企业微信部门 ID" type="number" />
           </div>
         </div>
-        <div class="flex gap-8">
+        <div class="flex gap-2">
           <button class="btn btn-primary btn-sm" @click="addDept">保存</button>
           <button class="btn btn-outline btn-sm" @click="showDeptForm = false">取消</button>
         </div>
@@ -201,3 +222,17 @@ function setFlash(msg, type) {
   setTimeout(() => { flash.value = '' }, 4000)
 }
 </script>
+
+<style scoped>
+.inline-form {
+  margin-top: var(--space-4);
+  padding: var(--space-5);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+}
+
+.inline-form .form-group {
+  margin-bottom: 0;
+}
+</style>

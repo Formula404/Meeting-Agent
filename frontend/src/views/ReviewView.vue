@@ -1,18 +1,44 @@
 <template>
   <div>
     <div class="review-header">
-      <h1 class="page-title" style="margin-bottom:0">审查修改</h1>
-      <router-link to="/" class="btn btn-outline btn-sm" style="align-self:flex-start">返回上传</router-link>
+      <h1 class="page-title" style="margin-bottom:0">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        审查修改
+      </h1>
+      <router-link to="/" class="btn btn-ghost btn-sm" style="align-self:flex-start">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+        返回上传
+      </router-link>
     </div>
 
-    <div v-if="loading" class="card text-center text-muted">加载中...</div>
+    <div v-if="loading" class="card">
+      <div class="spinner">
+        <div class="spinner-dot"></div>
+        <div class="spinner-dot"></div>
+        <div class="spinner-dot"></div>
+      </div>
+    </div>
 
     <div v-if="error" class="flash flash-error">{{ error }}</div>
 
     <div v-if="flash" class="flash" :class="flashType">{{ flash }}</div>
+
     <div v-if="errorDialog.visible" class="dialog-mask" @click.self="closeErrorDialog">
       <div class="dialog-card">
-        <div class="dialog-title">推送失败</div>
+        <div class="dialog-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          推送失败
+        </div>
         <div class="dialog-body">{{ errorDialog.message }}</div>
         <div class="dialog-actions">
           <button class="btn btn-primary btn-sm" @click="closeErrorDialog">我知道了</button>
@@ -22,11 +48,15 @@
 
     <template v-if="!loading && result">
       <div class="card">
-        <div class="flex-between mb-12">
+        <div class="flex-between mb-4">
           <span class="card-title" style="margin:0;border:none;padding:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
             文件：{{ filename }}
-            <span class="badge" :class="result.status === 'pushed' ? 'badge-pushed' : 'badge-draft'">
-              {{ result.status === 'pushed' ? '已推送' : '草稿' }}
+            <span class="badge" :class="result.status === 'pushed' ? 'badge-pushed' : 'badge-draft'" style="margin-left:8px">
+              {{ result.status === 'pushed' ? '✓ 已推送' : '○ 草稿' }}
             </span>
           </span>
         </div>
@@ -34,10 +64,18 @@
         <!-- pdf attachment -->
         <div class="form-group">
           <label class="form-label">PDF 附件</label>
-          <div class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
-            <span v-if="pdfFilename" class="text-sm">{{ pdfFilename }}</span>
-            <span v-else class="text-sm text-muted">未上传 PDF 附件</span>
-            <button class="btn btn-outline btn-sm" @click="triggerPdfUpload">上传{{ pdfFilename ? '更换' : '' }}</button>
+          <div class="file-info-row">
+            <div class="file-info">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <path d="M9 15h6"/>
+                <path d="M12 12v6"/>
+              </svg>
+              <span v-if="pdfFilename" class="text-sm">{{ pdfFilename }}</span>
+              <span v-else class="text-sm text-muted">未上传 PDF 附件</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="triggerPdfUpload">{{ pdfFilename ? '更换' : '上传' }}</button>
           </div>
           <input
             ref="pdfInput"
@@ -46,7 +84,7 @@
             style="display:none"
             @change="onPdfChange"
           />
-          <div v-if="pdfUploading" class="text-sm text-muted" style="margin-top:4px">上传中...</div>
+          <div v-if="pdfUploading" class="text-xs text-muted" style="margin-top:4px">上传中...</div>
         </div>
 
         <!-- meeting_date -->
@@ -65,7 +103,7 @@
         <div class="form-group" ref="pushUserRef">
           <div class="form-label-row">
             <label class="form-label" style="margin:0">推送用户</label>
-            <button v-if="local.push_user.length" class="btn btn-text btn-sm" @click="local.push_user = []">清除</button>
+            <button v-if="local.push_user.length" class="btn btn-ghost btn-sm" @click="local.push_user = []">清除</button>
           </div>
           <TagInput
             v-model="local.push_user"
@@ -79,7 +117,7 @@
         <div class="form-group" ref="pushDeptRef">
           <div class="form-label-row">
             <label class="form-label" style="margin:0">推送部门</label>
-            <button v-if="local.push_dept.length" class="btn btn-text btn-sm" @click="local.push_dept = []">清除</button>
+            <button v-if="local.push_dept.length" class="btn btn-ghost btn-sm" @click="local.push_dept = []">清除</button>
           </div>
           <TagInput
             v-model="local.push_dept"
@@ -92,10 +130,18 @@
 
       <!-- Schedules -->
       <div class="card">
-        <div class="flex-between mb-12">
-          <span class="card-title" style="margin:0;border:none;padding:0">日程安排</span>
-          <div class="flex gap-8">
-            <button v-if="local.schedules.length" type="button" class="btn btn-text btn-sm" @click="clearAllSchedules" style="color:#dc2626">清空全部</button>
+        <div class="flex-between mb-4">
+          <span class="card-title" style="margin:0;border:none;padding:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            日程安排
+          </span>
+          <div class="flex gap-2">
+            <button v-if="local.schedules.length" type="button" class="btn btn-ghost btn-sm btn-danger-text" @click="clearAllSchedules">清空全部</button>
             <button type="button" class="btn btn-outline btn-sm" @click="addSchedule">+ 添加日程</button>
           </div>
         </div>
@@ -111,25 +157,41 @@
           />
         </div>
 
-        <div v-if="!local.schedules.length" class="text-center text-muted text-sm" style="padding:16px 0">
-          暂无日程安排
+        <div v-if="!local.schedules.length" class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <div>暂无日程安排，点击上方添加</div>
         </div>
       </div>
 
       <!-- Meeting content -->
       <div class="card" ref="meetingContentRef">
-        <label class="form-label">会议纪要内容</label>
+        <label class="form-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          会议纪要内容
+        </label>
         <textarea
           class="form-textarea"
           v-model="local.meeting"
           rows="15"
-          style="font-size:14px;line-height:1.7"
         ></textarea>
       </div>
 
       <!-- Actions -->
       <div class="action-bar">
         <button class="btn btn-primary" @click="save" :disabled="saving">
+          <svg v-if="!saving" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
           {{ saving ? '保存中...' : '保存修改' }}
         </button>
         <button
@@ -138,6 +200,10 @@
           :disabled="pushing || !canPushBasic"
           v-if="result.status !== 'pushed'"
         >
+          <svg v-if="!pushing" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
           {{ pushing ? '推送中...' : '推送到企业微信' }}
         </button>
         <button
@@ -146,6 +212,10 @@
           :disabled="pushing || !canPushBasic"
           v-else
         >
+          <svg v-if="!pushing" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
           {{ pushing ? '推送中...' : '再次推送' }}
         </button>
       </div>
@@ -456,39 +526,30 @@ async function push() {
 </script>
 
 <style scoped>
-.dialog-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+.file-info-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  padding: 16px;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  gap: 8px;
 }
-.dialog-card {
-  width: min(520px, 100%);
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
-  padding: 16px;
-}
-.dialog-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #991b1b;
-  margin-bottom: 8px;
-}
-.dialog-body {
-  font-size: 14px;
-  color: #334155;
-  line-height: 1.6;
-  white-space: pre-wrap;
-}
-.dialog-actions {
-  margin-top: 14px;
+
+.file-info {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--gray-700);
+  min-width: 0;
+  flex: 1;
+}
+
+.file-info svg {
+  flex-shrink: 0;
+  color: var(--primary-500);
 }
 
 .form-label-row {
@@ -498,17 +559,17 @@ async function push() {
   margin-bottom: 6px;
 }
 
-.btn-text {
-  background: none;
-  border: none;
-  padding: 2px 6px;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 12px;
-  text-decoration: none;
-}
-.btn-text:hover {
-  color: #dc2626;
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) 0;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
 }
 
+.empty-state svg {
+  opacity: 0.5;
+}
 </style>

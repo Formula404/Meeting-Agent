@@ -1,6 +1,32 @@
 <template>
   <div>
-    <h1 class="page-title">上传会议纪要</h1>
+    <h1 class="page-title">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      上传会议纪要
+    </h1>
+
+    <!-- 录音转文字入口 -->
+    <div class="card transcription-entry">
+      <div class="transcription-entry-content">
+        <div class="transcription-entry-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div>
+          <div class="transcription-entry-title">会议录音转文字处理</div>
+          <div class="transcription-entry-desc">上传录音转写文档，使用自定义提示词让 AI 提取结构化会议纪要</div>
+        </div>
+        <router-link to="/transcribe" class="btn btn-primary">开始处理</router-link>
+      </div>
+    </div>
 
     <!-- Step 1: File selection -->
     <div v-if="!selectedFile" class="upload-row">
@@ -12,7 +38,14 @@
         @drop.prevent="onDropDocx"
         @click="triggerDocxInput"
       >
-        <div class="upload-zone-icon">&#128196;</div>
+        <div class="upload-zone-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+        </div>
         <div class="upload-zone-text">拖拽或点击选择 .docx 文件</div>
         <div class="upload-zone-hint">必选，仅支持 .docx 格式</div>
         <input
@@ -32,7 +65,14 @@
         @drop.prevent="onDropPdf"
         @click="triggerPdfInput"
       >
-        <div class="upload-zone-icon">&#128196;</div>
+        <div class="upload-zone-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M9 15h6"/>
+            <path d="M12 12v6"/>
+          </svg>
+        </div>
         <div class="upload-zone-text">拖拽或点击选择 PDF 文件</div>
         <div class="upload-zone-hint">可选，仅支持 .pdf 格式</div>
         <input
@@ -47,21 +87,45 @@
 
     <!-- Step 2: File selected, waiting for confirm -->
     <div v-else-if="!uploading && !resultId" class="card">
-      <h2 class="card-title">已选择文件</h2>
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        已选择文件
+      </h2>
       <div class="form-group">
         <label class="form-label">会议文件（.docx）</label>
-        <p class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
-          <span>{{ selectedFile.name }}（{{ formatSize(selectedFile.size) }}）</span>
-          <button class="btn btn-outline btn-sm" @click.stop="cancelDocx">更换</button>
-        </p>
+        <div class="file-info-row">
+          <div class="file-info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            <span>{{ selectedFile.name }}</span>
+            <span class="file-size">（{{ formatSize(selectedFile.size) }}）</span>
+          </div>
+          <button class="btn btn-ghost btn-sm" @click.stop="cancelDocx">更换</button>
+        </div>
       </div>
       <div class="form-group">
-        <label class="form-label">附件（.pdf）<span class="text-muted text-sm"> （可选）</span></label>
-        <div v-if="pdfFile" class="form-input" style="background:#f8fafc;cursor:default;display:flex;align-items:center;justify-content:space-between">
-          <span>{{ pdfFile.name }}（{{ formatSize(pdfFile.size) }}）</span>
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-outline btn-sm" @click.stop="triggerPdfInput">更换</button>
-            <button class="btn btn-outline btn-sm" style="color:#dc2626" @click.stop="pdfFile = null">移除</button>
+        <label class="form-label">附件（.pdf）<span class="text-muted text-xs">（可选）</span></label>
+        <div v-if="pdfFile" class="file-info-row">
+          <div class="file-info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <path d="M9 15h6"/>
+              <path d="M12 12v6"/>
+            </svg>
+            <span>{{ pdfFile.name }}</span>
+            <span class="file-size">（{{ formatSize(pdfFile.size) }}）</span>
+          </div>
+          <div class="flex gap-1">
+            <button class="btn btn-ghost btn-sm" @click.stop="triggerPdfInput">更换</button>
+            <button class="btn btn-ghost btn-sm btn-danger-text" @click.stop="pdfFile = null">移除</button>
           </div>
         </div>
         <div v-else>
@@ -77,27 +141,36 @@
           </div>
         </div>
       </div>
-      <div class="flex gap-8 mt-16">
+      <div class="flex gap-2 mt-5">
         <button class="btn btn-primary" @click="startExtract">开始解析</button>
         <button class="btn btn-outline" @click="cancelFile">重新选择</button>
       </div>
     </div>
 
     <!-- Step 3: Extracting -->
-    <div v-if="uploading" class="card" style="position:relative;min-height:140px">
-      <div class="loader">
-        <div class="justify-content-center jimu-primary-loading"></div>
+    <div v-if="uploading" class="card">
+      <div class="extracting-state">
+        <div class="spinner">
+          <div class="spinner-dot"></div>
+          <div class="spinner-dot"></div>
+          <div class="spinner-dot"></div>
+        </div>
+        <div class="extracting-title">AI 正在解析中...</div>
+        <div class="extracting-file">{{ selectedFile?.name }}</div>
       </div>
-      <p class="text-sm text-muted extracting-hint">
-        AI解析中，请稍后...<br />文件名：{{ selectedFile?.name }}
-      </p>
     </div>
 
-    <div v-if="error" class="flash flash-error mt-16">{{ error }}</div>
+    <div v-if="error" class="flash flash-error mt-4">{{ error }}</div>
 
     <!-- History -->
-    <div v-if="recentList.length" class="card mt-20">
-      <h2 class="card-title">最近解析记录</h2>
+    <div v-if="recentList.length" class="card mt-6">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        最近解析记录
+      </h2>
       <div class="table-wrapper">
         <table class="data-table">
           <thead>
@@ -114,15 +187,23 @@
               <td class="truncate" style="max-width:140px">{{ r.original_filename }}</td>
               <td>
                 <span class="badge" :class="r.status === 'pushed' ? 'badge-pushed' : 'badge-draft'">
+                  <span v-if="r.status === 'pushed'">✓</span>
+                  <span v-else>○</span>
                   {{ r.status === 'pushed' ? '已推送' : '草稿' }}
                 </span>
               </td>
               <td class="text-sm text-muted">{{ r.pdf_filename ? '有' : '—' }}</td>
               <td class="text-sm text-muted">{{ formatTime(r.created_at) }}</td>
-              <td style="white-space:nowrap">
+              <td>
                 <div class="row-actions">
                   <router-link :to="{ name: 'review', params: { id: r.id } }" class="btn btn-outline btn-sm">查看</router-link>
-                  <button class="btn btn-outline btn-sm" style="color:#dc2626" @click="handleDelete(r)" :disabled="deletingId === r.id">{{ deletingId === r.id ? '删除中...' : '删除' }}</button>
+                  <button
+                    class="btn btn-ghost btn-sm btn-danger-text"
+                    @click="handleDelete(r)"
+                    :disabled="deletingId === r.id"
+                  >
+                    {{ deletingId === r.id ? '删除中...' : '删除' }}
+                  </button>
                 </div>
               </td>
             </tr>
@@ -264,146 +345,110 @@ function formatTime(ts) {
 </script>
 
 <style scoped>
-.loader {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  right: 0;
+.file-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--gray-50);
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  gap: 8px;
 }
 
-.jimu-primary-loading:before,
-.jimu-primary-loading:after {
-  position: absolute;
-  top: 0;
-  content: '';
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--gray-700);
+  min-width: 0;
+  flex: 1;
 }
 
-.jimu-primary-loading:before {
-  left: -19.992px;
+.file-info svg {
+  flex-shrink: 0;
+  color: var(--primary-500);
 }
 
-.jimu-primary-loading:after {
-  left: 19.992px;
-  -webkit-animation-delay: 0.32s !important;
-  animation-delay: 0.32s !important;
+.file-size {
+  color: var(--gray-400);
+  white-space: nowrap;
 }
 
-.jimu-primary-loading:before,
-.jimu-primary-loading:after,
-.jimu-primary-loading {
-  background: #076fe5;
-  -webkit-animation: loading-keys-app-loading 0.8s infinite ease-in-out;
-  animation: loading-keys-app-loading 0.8s infinite ease-in-out;
-  width: 13.6px;
-  height: 32px;
+.extracting-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-8) 0;
 }
 
-.jimu-primary-loading {
-  text-indent: -9999em;
-  margin: auto;
-  position: absolute;
-  right: calc(50% - 6.8px);
-  top: calc(50% - 16px);
-  -webkit-animation-delay: 0.16s !important;
-  animation-delay: 0.16s !important;
+.extracting-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--gray-700);
+  margin-top: var(--space-4);
 }
 
-@-webkit-keyframes loading-keys-app-loading {
-  0%, 80%, 100% { opacity: .75; box-shadow: 0 0 #076fe5; height: 32px; }
-  40% { opacity: 1; box-shadow: 0 -8px #076fe5; height: 40px; }
-}
-
-@keyframes loading-keys-app-loading {
-  0%, 80%, 100% { opacity: .75; box-shadow: 0 0 #076fe5; height: 32px; }
-  40% { opacity: 1; box-shadow: 0 -8px #076fe5; height: 40px; }
+.extracting-file {
+  font-size: var(--text-sm);
+  color: var(--gray-400);
+  margin-top: var(--space-2);
 }
 
 .row-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
-.extracting-hint {
-  position: absolute;
-  bottom: 5px;
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
+.transcription-entry {
+  cursor: default;
 }
 
-/* Two-column upload zones on desktop */
-.upload-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
+.transcription-entry-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
-@media (min-width: 640px) {
-  .upload-row {
-    grid-template-columns: 1fr 1fr;
+.transcription-entry-icon {
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-600);
+  flex-shrink: 0;
+}
+
+.transcription-entry-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+.transcription-entry-desc {
+  font-size: var(--text-sm);
+  color: var(--gray-500);
+  margin-top: 2px;
+}
+
+.transcription-entry-content .btn {
+  margin-left: auto;
+}
+
+@media (max-width: 639px) {
+  .transcription-entry-content {
+    flex-direction: column;
+    text-align: center;
   }
-}
-
-.upload-zone {
-  border: 2px dashed #cbd5e1;
-  border-radius: 10px;
-  padding: 36px 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: #fafbfc;
-}
-
-@media (min-width: 640px) {
-  .upload-zone { padding: 48px 24px; }
-}
-
-.upload-zone:hover,
-.upload-zone.dragover {
-  border-color: #2563eb;
-  background: #eff6ff;
-}
-
-.upload-zone-pdf {
-  border-color: #d1d5db;
-}
-
-.upload-zone-pdf:hover,
-.upload-zone-pdf.dragover {
-  border-color: #16a34a;
-  background: #f0fdf4;
-}
-
-.upload-zone-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-  opacity: 0.4;
-}
-
-@media (min-width: 640px) {
-  .upload-zone-icon { font-size: 40px; margin-bottom: 12px; }
-}
-
-.upload-zone-text {
-  font-size: 14px;
-  color: #64748b;
-}
-
-@media (min-width: 640px) {
-  .upload-zone-text { font-size: 15px; }
-}
-
-.upload-zone-hint {
-  font-size: 12px;
-  color: #94a3b8;
-  margin-top: 4px;
-}
-
-/* Inline upload zone inside the "selected" card */
-.upload-zone-inline {
-  padding: 16px;
-  border-style: dashed;
+  .transcription-entry-content .btn {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 </style>

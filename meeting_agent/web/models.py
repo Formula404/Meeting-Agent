@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -204,6 +205,87 @@ def update_pdf_filename(result_id: str, pdf_filename: str) -> bool:
         cur = conn.execute(
             "UPDATE extraction_results SET pdf_filename=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (pdf_filename, result_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ── Transcription Results ──────────────────────────────────────────
+
+def create_transcription_result(
+    original_filename: str,
+    result_data: Dict[str, Any],
+    user_prompt: str = "",
+) -> Dict[str, Any]:
+    result_id = str(uuid.uuid4())
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO transcription_results (id, original_filename, user_prompt, result_json) VALUES (?, ?, ?, ?)",
+            (result_id, original_filename, user_prompt, json.dumps(result_data, ensure_ascii=False)),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM transcription_results WHERE id = ?", (result_id,)).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_transcription_results() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_transcription_result(result_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM transcription_results WHERE id = ?", (result_id,)).fetchone()
+        if row:
+            d = dict(row)
+            d["result_json"] = json.loads(d["result_json"])
+            return d
+        return None
+    finally:
+        conn.close()
+
+
+def update_transcription_result(result_id: str, result_data: Dict[str, Any]) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE transcription_results SET result_json=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (json.dumps(result_data, ensure_ascii=False), result_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_transcription_result(result_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute("DELETE FROM transcription_results WHERE id = ?", (result_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def mark_transcription_result_pushed(result_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE transcription_results SET status='pushed', pushed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (result_id,),
         )
         conn.commit()
         return cur.rowcount > 0

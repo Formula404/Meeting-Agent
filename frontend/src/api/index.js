@@ -120,4 +120,43 @@ export default {
   deleteDepartment(id) {
     return request(`/departments/${id}`, { method: 'DELETE' })
   },
+
+  // Transcription (录音转文字)
+  transcribeFile(file, customPrompt) {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('custom_prompt', customPrompt)
+    return request('/transcribe', { method: 'POST', body: form })
+  },
+
+  getTranscription(id) {
+    return request(`/transcribe/${id}`)
+  },
+
+  updateTranscription(id, result) {
+    return request(`/transcribe/${id}`, { method: 'PUT', body: { result } })
+  },
+
+  exportTranscriptionDocx(id) {
+    const url = `${BASE}/transcribe/${id}/export-docx`
+    // Direct download via link click
+    const a = document.createElement('a')
+    a.href = url
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    return Promise.resolve()
+  },
+
+  pushTranscription(id) {
+    return request(`/transcribe/${id}/push`, { method: 'POST' })
+  },
+
+  deleteTranscription(id) {
+    return request(`/transcribe/${id}`, { method: 'DELETE' }).catch((err) => {
+      // Fallback if DELETE is blocked
+      return request(`/transcribe/${id}/delete`, { method: 'POST' })
+    })
+  },
 }
