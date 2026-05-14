@@ -79,6 +79,7 @@ def init_db() -> None:
             "CREATE TABLE IF NOT EXISTS departments ("
             "id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, "
             "dept_id INTEGER NOT NULL UNIQUE, "
+            "parent_dept_id INTEGER REFERENCES departments(dept_id) ON DELETE SET NULL, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )

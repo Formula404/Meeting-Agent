@@ -19,7 +19,7 @@
 | LLM SDK | LangChain (OpenAI-compatible) |
 | 文档解析 | python-docx |
 | 数据校验 | Pydantic |
-| 数据存储 | SQLite |
+| 数据存储 | PostgreSQL |
 | 包管理 | uv |
 
 ## 快速开始
@@ -64,7 +64,13 @@ cd ..
 
 ### 3. 运行
 
-首次运行 Web API 会自动创建 `data/` 目录（含 `input/`、`output/` 子目录和 SQLite 数据库）。
+首次运行 Web API 会自动创建 `data/` 目录（含 `input/`、`output/` 子目录）。
+
+**数据库**：使用 PostgreSQL，需在 `.env` 中配置 `DATABASE_URL`：
+
+```ini
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+```
 
 **CLI 模式** — 解析一篇会议记录：
 
@@ -91,8 +97,8 @@ cd frontend && npm run dev
 ```
 上传 .docx  →  LLM 自动提取  →  在线审阅编辑  →  推送至企业微信
                                                   ↓
-                              姓名 → userid 映射（SQLite 用户库）
-                              部门 → dept_id 映射（SQLite 部门库）
+                              姓名 → userid 映射（PostgreSQL 用户库）
+                              部门 → dept_id 映射（PostgreSQL 部门库）
                               日期字符串 → Unix 时间戳
                               消息通知 + 日历日程
 ```
@@ -132,7 +138,7 @@ meeting-agent/
 │   │   └── schedule_service.py    # 创建日程业务逻辑
 │   └── web/
 │       ├── run.py                 # FastAPI 启动入口
-│       ├── database.py            # SQLite 数据库初始化
+│       ├── database.py            # PostgreSQL 连接池 & 数据库初始化
 │       ├── models.py              # CRUD 数据访问层
 │       ├── converter.py           # 数据转换（姓名→ID，日期→时间戳）
 │       └── api/app.py             # 所有 API 路由
