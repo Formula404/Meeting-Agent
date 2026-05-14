@@ -1,9 +1,32 @@
 const BASE = '/api'
 
+function getToken() {
+  return localStorage.getItem('token')
+}
+
+function authHeaders() {
+  const token = getToken()
+  return token ? { 'Authorization': `Bearer ${token}` } : {}
+}
+
+async function handleResponse(res) {
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    window.location.href = '/login'
+    throw new Error('登录已过期，请重新登录')
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.detail || `HTTP ${res.status}`)
+  }
+  return data
+}
+
 async function request(path, options = {}) {
   const url = `${BASE}${path}`
   const config = {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     ...options,
   }
   if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -14,17 +37,13 @@ async function request(path, options = {}) {
   }
 
   const res = await fetch(url, config)
-  if (!res.ok) {
-    const detail = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(detail.detail || `HTTP ${res.status}`)
-  }
-  return res.json()
+  return handleResponse(res)
 }
 
 async function requestWithStatus(path, options = {}) {
   const url = `${BASE}${path}`
   const config = {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     ...options,
   }
   if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
@@ -41,11 +60,33 @@ async function requestWithStatus(path, options = {}) {
   } catch (_) {
     data = null
   }
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    window.location.href = '/login'
+  }
   return { ok: res.ok, status: res.status, data, statusText: res.statusText }
 }
 
 export default {
-  // Extraction
+  // ── Auth ──
+  login(username, password) {
+    return request('/auth/login', { method: 'POST', body: { username, password } })
+  },
+
+  register(username, password, department_name) {
+    return request('/auth/register', { method: 'POST', body: { username, password, department_name } })
+  },
+
+  getMe() {
+    return request('/auth/me')
+  },
+
+  logout() {
+    return request('/auth/logout', { method: 'POST' })
+  },
+
+  // ── Extraction ──
   uploadFile(file, pdfFile) {
     const form = new FormData()
     form.append('file', file)
@@ -87,7 +128,7 @@ export default {
     })
   },
 
-  // Users
+  // ── Users ──
   listUsers() {
     return request('/users')
   },
@@ -104,7 +145,7 @@ export default {
     return request(`/users/${id}`, { method: 'DELETE' })
   },
 
-  // Departments
+  // ── Departments ──
   listDepartments() {
     return request('/departments')
   },
@@ -121,7 +162,7 @@ export default {
     return request(`/departments/${id}`, { method: 'DELETE' })
   },
 
-  // Transcription (录音转文字)
+  // ── Transcription ──
   transcribeFile(file, customPrompt) {
     const form = new FormData()
     form.append('file', file)
@@ -138,14 +179,25 @@ export default {
   },
 
   exportTranscriptionDocx(id) {
+    const token = getToken()
     const url = `${BASE}/transcribe/${id}/export-docx`
-    // Direct download via link click
     const a = document.createElement('a')
     a.href = url
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    // Attach auth header via fetch + blob download
+    fetch(url, { headers: { ...authHeaders() } }).then(res => {
+      if (!res.ok) throw new Error('导出失败')
+      return res.blob()
+    }).then(blob => {
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `${id}.docx`
+      link.click()
+      URL.revokeObjectURL(blobUrl)
+    }).catch(err => {
+      console.error('导出失败:', err)
+      alert('导出失败')
+    })
     return Promise.resolve()
   },
 
@@ -155,7 +207,6 @@ export default {
 
   deleteTranscription(id) {
     return request(`/transcribe/${id}`, { method: 'DELETE' }).catch((err) => {
-      // Fallback if DELETE is blocked
       return request(`/transcribe/${id}/delete`, { method: 'POST' })
     })
   },

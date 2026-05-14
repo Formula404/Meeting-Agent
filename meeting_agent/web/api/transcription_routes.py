@@ -8,11 +8,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from meeting_agent.transcription.workflow import run_transcription_extraction
 from meeting_agent.transcription.docx_export import export_to_docx
+from meeting_agent.web.auth import get_current_user
 from meeting_agent.web.converter import convert_result_for_push
 from meeting_agent.services.message_service import send_meeting_summary_from_result
 from meeting_agent.services.schedule_service import create_meeting_schedules_from_result
@@ -39,6 +40,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 async def transcribe(
     file: UploadFile = File(...),
     custom_prompt: str = Form(""),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """上传录音转文字文件，执行 LLM 提取，返回结构化会议纪要。
 
@@ -71,6 +73,7 @@ async def transcribe(
         original_filename=file.filename,
         result_data=result_data,
         user_prompt=custom_prompt,
+        web_user_id=current_user["id"],
     )
 
     return {
@@ -82,17 +85,26 @@ async def transcribe(
 
 
 @router.get("/transcribe")
-def list_all_transcriptions() -> List[Dict[str, Any]]:
-    """列出所有转录处理记录（元数据，不含完整 JSON）。"""
-    return list_transcription_results()
+def list_all_transcriptions(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    """列出所有转录处理记录 — admin 看到全部，用户只看自己的。"""
+    is_admin = current_user.get("role") == "admin"
+    web_user_id = current_user["id"] if not is_admin else None
+    return list_transcription_results(web_user_id=web_user_id, is_admin=is_admin)
 
 
 @router.get("/transcribe/{result_id}")
-def get_transcription_result_endpoint(result_id: str) -> Dict[str, Any]:
+def get_transcription_result_endpoint(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """获取单条转录处理结果（含完整 JSON 数据）。"""
     record = get_transcription_result(result_id)
     if not record:
         raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权访问此记录")
     return record
 
 
@@ -102,9 +114,16 @@ class UpdateTranscriptionBody(BaseModel):
 
 @router.put("/transcribe/{result_id}")
 def update_transcription_result_endpoint(
-    result_id: str, body: UpdateTranscriptionBody
+    result_id: str,
+    body: UpdateTranscriptionBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, str]:
     """更新转录处理结果（用户编辑后保存）。"""
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权修改此记录")
     ok = update_transcription_result(result_id, body.result)
     if not ok:
         raise HTTPException(404, "结果不存在")
@@ -112,8 +131,16 @@ def update_transcription_result_endpoint(
 
 
 @router.delete("/transcribe/{result_id}")
-def delete_transcription_result_endpoint(result_id: str) -> Dict[str, str]:
+def delete_transcription_result_endpoint(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
     """删除转录处理记录。"""
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权删除此记录")
     ok = delete_transcription_result(result_id)
     if not ok:
         raise HTTPException(404, "结果不存在")
@@ -121,8 +148,16 @@ def delete_transcription_result_endpoint(result_id: str) -> Dict[str, str]:
 
 
 @router.post("/transcribe/{result_id}/delete")
-def delete_transcription_result_compat(result_id: str) -> Dict[str, str]:
+def delete_transcription_result_compat(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
     """兼容 DELETE 被限制的环境。"""
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权删除此记录")
     ok = delete_transcription_result(result_id)
     if not ok:
         raise HTTPException(404, "结果不存在")
@@ -130,7 +165,10 @@ def delete_transcription_result_compat(result_id: str) -> Dict[str, str]:
 
 
 @router.post("/transcribe/{result_id}/export-docx")
-def export_transcription_docx(result_id: str) -> Any:
+def export_transcription_docx(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Any:
     """将转录处理结果导出为 .docx 文件并下载。"""
     from fastapi.responses import FileResponse
 
@@ -156,11 +194,16 @@ def export_transcription_docx(result_id: str) -> Any:
 
 
 @router.post("/transcribe/{result_id}/push")
-def push_transcription_result(result_id: str) -> Dict[str, Any]:
+def push_transcription_result(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """推送转录处理结果到企业微信（复用现有推送流程）。"""
     record = get_transcription_result(result_id)
     if not record:
         raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权推送此记录")
 
     raw: Dict[str, Any] = record["result_json"]
 

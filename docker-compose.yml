@@ -33,6 +33,7 @@ services:
       WECOM_CORP_ID: ${WECOM_CORP_ID:-}
       WECOM_CORP_SECRET: ${WECOM_CORP_SECRET:-}
       WECOM_AGENT_ID: ${WECOM_AGENT_ID:-0}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
     volumes:
       # Uploaded files (docx, pdf) — still on disk, not in DB
       - ./data:/app/data

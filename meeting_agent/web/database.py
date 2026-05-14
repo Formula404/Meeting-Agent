@@ -91,9 +91,27 @@ def init_db() -> None:
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
         cur.execute(
+            "CREATE TABLE IF NOT EXISTS web_users ("
+            "id SERIAL PRIMARY KEY, username TEXT NOT NULL UNIQUE, "
+            "password_hash TEXT NOT NULL, "
+            "role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')), "
+            "department_name TEXT NOT NULL DEFAULT '', "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS sessions ("
+            "id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL "
+            "REFERENCES web_users(id) ON DELETE CASCADE, "
+            "token TEXT NOT NULL UNIQUE, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
+        cur.execute(
             "CREATE TABLE IF NOT EXISTS extraction_results ("
             "id TEXT PRIMARY KEY, original_filename TEXT NOT NULL, "
             "pdf_filename TEXT DEFAULT '', "
+            "web_user_id INTEGER DEFAULT NULL "
+            "REFERENCES web_users(id) ON DELETE SET NULL, "
             "status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','pushed')), "
             "result_json TEXT NOT NULL, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
@@ -104,6 +122,8 @@ def init_db() -> None:
             "CREATE TABLE IF NOT EXISTS transcription_results ("
             "id TEXT PRIMARY KEY, original_filename TEXT NOT NULL, "
             "user_prompt TEXT NOT NULL DEFAULT '', "
+            "web_user_id INTEGER DEFAULT NULL "
+            "REFERENCES web_users(id) ON DELETE SET NULL, "
             "status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','pushed')), "
             "result_json TEXT NOT NULL, "
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
@@ -111,15 +131,41 @@ def init_db() -> None:
             "pushed_at TIMESTAMP)"
         )
         cur.close()
-        # Migration: add pdf_filename column if missing (existing DB)
-        try:
-            cur = conn.cursor()
+        # Migrations: add columns if missing (existing DB)
+        # Use information_schema checks to avoid transaction-abort from DuplicateColumn
+        cur = conn.cursor()
+
+        # pdf_filename on extraction_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='extraction_results' AND column_name='pdf_filename'"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE extraction_results ADD COLUMN pdf_filename TEXT DEFAULT ''")
+
+        # web_user_id on extraction_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='extraction_results' AND column_name='web_user_id'"
+        )
+        if not cur.fetchone():
             cur.execute(
-                "ALTER TABLE extraction_results ADD COLUMN pdf_filename TEXT DEFAULT ''"
+                "ALTER TABLE extraction_results ADD COLUMN web_user_id INTEGER "
+                "REFERENCES web_users(id) ON DELETE SET NULL"
             )
-            cur.close()
-        except psycopg2.errors.DuplicateColumn:
-            pass
+
+        # web_user_id on transcription_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='transcription_results' AND column_name='web_user_id'"
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "ALTER TABLE transcription_results ADD COLUMN web_user_id INTEGER "
+                "REFERENCES web_users(id) ON DELETE SET NULL"
+            )
+
+        cur.close()
         conn.commit()
     finally:
         conn.close()

@@ -120,19 +120,105 @@ def delete_department(dept_pk: int) -> None:
         conn.close()
 
 
+# ── Web Users (login accounts) ─────────────────────────────────────────────
+
+def create_web_user(username: str, password_hash: str, department_name: str = "", role: str = "user") -> Dict[str, Any]:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO web_users (username, password_hash, department_name, role) VALUES (%s, %s, %s, %s) RETURNING id",
+            (username.strip(), password_hash, department_name.strip(), role),
+        )
+        conn.commit()
+        row_id = cur.fetchone()["id"]
+        row = conn.execute("SELECT * FROM web_users WHERE id = %s", (row_id,)).fetchone()
+        return dict(row)
+    except UniqueViolation:
+        raise ValueError("用户名已存在")
+    finally:
+        conn.close()
+
+
+def get_web_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM web_users WHERE username = %s", (username.strip(),)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_web_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM web_users WHERE id = %s", (user_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_web_users() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT id, username, role, department_name, created_at FROM web_users ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def delete_web_user(user_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute("DELETE FROM web_users WHERE id = %s", (user_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ── Sessions ───────────────────────────────────────────────────────────────
+
+def create_session(user_id: int, token: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("INSERT INTO sessions (user_id, token) VALUES (%s, %s)", (user_id, token))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_session_by_token(token: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM sessions WHERE token = %s", (token,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_session(token: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM sessions WHERE token = %s", (token,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ── Results ────────────────────────────────────────────────────────────────
 
 def create_result(
     original_filename: str,
     result_data: Dict[str, Any],
     pdf_filename: str = "",
+    web_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     result_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO extraction_results (id, original_filename, pdf_filename, result_json) VALUES (%s, %s, %s, %s)",
-            (result_id, original_filename, pdf_filename, json.dumps(result_data, ensure_ascii=False)),
+            "INSERT INTO extraction_results (id, original_filename, pdf_filename, web_user_id, result_json) VALUES (%s, %s, %s, %s, %s)",
+            (result_id, original_filename, pdf_filename, web_user_id, json.dumps(result_data, ensure_ascii=False)),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM extraction_results WHERE id = %s", (result_id,)).fetchone()
@@ -141,12 +227,20 @@ def create_result(
         conn.close()
 
 
-def list_results() -> List[Dict[str, Any]]:
+def list_results(web_user_id: Optional[int] = None, is_admin: bool = False) -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results ORDER BY created_at DESC"
-        ).fetchall()
+        if is_admin:
+            rows = conn.execute(
+                "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results ORDER BY created_at DESC"
+            ).fetchall()
+        elif web_user_id is not None:
+            rows = conn.execute(
+                "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results WHERE web_user_id = %s ORDER BY created_at DESC",
+                (web_user_id,),
+            ).fetchall()
+        else:
+            rows = []
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -221,13 +315,14 @@ def create_transcription_result(
     original_filename: str,
     result_data: Dict[str, Any],
     user_prompt: str = "",
+    web_user_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     result_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO transcription_results (id, original_filename, user_prompt, result_json) VALUES (%s, %s, %s, %s)",
-            (result_id, original_filename, user_prompt, json.dumps(result_data, ensure_ascii=False)),
+            "INSERT INTO transcription_results (id, original_filename, user_prompt, web_user_id, result_json) VALUES (%s, %s, %s, %s, %s)",
+            (result_id, original_filename, user_prompt, web_user_id, json.dumps(result_data, ensure_ascii=False)),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM transcription_results WHERE id = %s", (result_id,)).fetchone()
@@ -236,12 +331,20 @@ def create_transcription_result(
         conn.close()
 
 
-def list_transcription_results() -> List[Dict[str, Any]]:
+def list_transcription_results(web_user_id: Optional[int] = None, is_admin: bool = False) -> List[Dict[str, Any]]:
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results ORDER BY created_at DESC"
-        ).fetchall()
+        if is_admin:
+            rows = conn.execute(
+                "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results ORDER BY created_at DESC"
+            ).fetchall()
+        elif web_user_id is not None:
+            rows = conn.execute(
+                "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results WHERE web_user_id = %s ORDER BY created_at DESC",
+                (web_user_id,),
+            ).fetchall()
+        else:
+            rows = []
         return [dict(r) for r in rows]
     finally:
         conn.close()
