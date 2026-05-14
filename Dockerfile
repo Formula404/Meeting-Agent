@@ -1,6 +1,7 @@
 # ── Stage 1: build frontend ──
 FROM node:20-alpine AS frontend-builder
 WORKDIR /build
+RUN npm config set registry https://registry.npmmirror.com
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 COPY frontend/ .
@@ -11,6 +12,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install Python deps
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 
