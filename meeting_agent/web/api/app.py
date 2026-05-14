@@ -32,12 +32,14 @@ from meeting_agent.web.models import (
     delete_result,
     delete_session,
     delete_user,
+    delete_web_user,
     get_result,
     get_web_user_by_id,
     get_web_user_by_username,
     list_departments,
     list_results,
     list_users,
+    list_web_users,
     mark_result_pushed,
     update_department,
     update_pdf_filename,
@@ -461,4 +463,46 @@ def api_update_department(dept_pk: int, body: DeptUpdateBody, admin: Dict[str, A
 @router.delete("/departments/{dept_pk}")
 def api_delete_department(dept_pk: int, admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, str]:
     delete_department(dept_pk)
+    return {"status": "deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Web User (账号) CRUD — admin only
+# ═══════════════════════════════════════════════════════════════════════
+
+class WebUserBody(BaseModel):
+    username: str
+    password: str
+    department_name: str = ""
+    role: str = "user"
+
+
+@router.get("/web-users")
+def api_list_web_users(admin: Dict[str, Any] = Depends(require_admin)) -> List[Dict[str, Any]]:
+    return list_web_users()
+
+
+@router.post("/web-users")
+def api_create_web_user(body: WebUserBody, admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
+    username = body.username.strip()
+    if not username or not body.password:
+        raise HTTPException(400, "用户名和密码不能为空")
+    if len(body.password) < 6:
+        raise HTTPException(400, "密码长度不能少于 6 位")
+    if body.role not in ("user", "admin"):
+        raise HTTPException(400, "角色只能是 user 或 admin")
+    try:
+        password_hash = hash_password(body.password)
+        user = create_web_user(username, password_hash, body.department_name, role=body.role)
+        return {"id": user["id"], "username": user["username"], "role": user["role"],
+                "department_name": user["department_name"], "created_at": user["created_at"]}
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.delete("/web-users/{user_id}")
+def api_delete_web_user(user_id: int, admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, str]:
+    ok = delete_web_user(user_id)
+    if not ok:
+        raise HTTPException(404, "用户不存在")
     return {"status": "deleted"}

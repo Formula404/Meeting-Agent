@@ -145,6 +145,19 @@ export default {
     return request(`/users/${id}`, { method: 'DELETE' })
   },
 
+  // ── Web Users (login accounts) ──
+  listWebUsers() {
+    return request('/web-users')
+  },
+
+  createWebUser(body) {
+    return request('/web-users', { method: 'POST', body })
+  },
+
+  deleteWebUser(id) {
+    return request(`/web-users/${id}`, { method: 'DELETE' })
+  },
+
   // ── Departments ──
   listDepartments() {
     return request('/departments')
