@@ -537,6 +537,16 @@ async function push() {
   gap: 8px;
 }
 
+@media (max-width: 480px) {
+  .file-info-row {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+  }
+  .file-info {
+    width: 100%;
+  }
+}
+
 .file-info {
   display: flex;
   align-items: center;
@@ -557,19 +567,37 @@ async function push() {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-8) 0;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
   color: var(--gray-400);
   font-size: var(--text-sm);
 }
 
+@media (min-width: 640px) {
+  .empty-state {
+    padding: var(--space-8) 0;
+    gap: var(--space-3);
+  }
+}
+
 .empty-state svg {
   opacity: 0.5;
+  width: 32px;
+  height: 32px;
+}
+
+@media (min-width: 640px) {
+  .empty-state svg {
+    width: 40px;
+    height: 40px;
+  }
 }
 </style>

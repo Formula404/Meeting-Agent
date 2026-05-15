@@ -35,7 +35,7 @@
             <span class="nav-user-name">{{ authStore.user?.username }}</span>
             <span v-if="authStore.isAdmin" class="nav-user-badge">管理员</span>
           </span>
-          <button class="btn btn-ghost btn-sm nav-logout" @click="handleLogout">退出</button>
+          <button class="btn btn-ghost btn-sm nav-logout" @click="handleLogout" title="退出登录">退出</button>
         </div>
       </div>
     </nav>
@@ -112,5 +112,23 @@ async function handleLogout() {
 }
 .nav-logout:hover {
   color: var(--danger);
+}
+
+@media (max-width: 639px) {
+  .nav-user-name {
+    display: none;
+  }
+  .nav-user-badge {
+    display: none;
+  }
+  .nav-user-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+  .nav-logout {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
 }
 </style>

@@ -152,11 +152,18 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 1px;
+  padding: 4px 6px;
   border-bottom: 1px solid var(--gray-200);
   background: var(--gray-50);
   user-select: none;
+}
+
+@media (min-width: 640px) {
+  .editor-toolbar {
+    gap: 2px;
+    padding: 6px 8px;
+  }
 }
 
 .toolbar-group {
@@ -167,26 +174,41 @@ onBeforeUnmount(() => {
 
 .toolbar-divider {
   width: 1px;
-  height: 22px;
+  height: 18px;
   background: var(--gray-200);
-  margin: 0 4px;
+  margin: 0 3px;
   flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+  .toolbar-divider {
+    height: 22px;
+    margin: 0 4px;
+  }
 }
 
 .toolbar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 28px;
+  width: 28px;
+  height: 26px;
   border: none;
   background: transparent;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--gray-600);
   padding: 0;
   transition: background 0.15s, color 0.15s;
+}
+
+@media (min-width: 640px) {
+  .toolbar-btn {
+    width: 30px;
+    height: 28px;
+    font-size: 13px;
+  }
 }
 
 .toolbar-btn:hover {
@@ -205,16 +227,30 @@ onBeforeUnmount(() => {
 
 .editor-content {
   padding: 0;
-  min-height: 280px;
+  min-height: 200px;
+}
+
+@media (min-width: 640px) {
+  .editor-content {
+    min-height: 280px;
+  }
 }
 
 .editor-content :deep(.editor-input) {
-  padding: 12px 14px;
-  min-height: 280px;
+  padding: 10px 12px;
+  min-height: 200px;
   outline: none;
-  line-height: 1.7;
+  line-height: 1.6;
   font-size: 14px;
   color: var(--gray-800);
+}
+
+@media (min-width: 640px) {
+  .editor-content :deep(.editor-input) {
+    padding: 12px 14px;
+    min-height: 280px;
+    line-height: 1.7;
+  }
 }
 
 .editor-content :deep(.editor-input p) {

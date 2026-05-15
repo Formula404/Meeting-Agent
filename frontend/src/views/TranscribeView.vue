@@ -179,7 +179,7 @@
             </span>
             <span class="text-sm text-muted">文件：{{ resultFilename }}</span>
           </div>
-          <div class="flex gap-2">
+          <div class="flex gap-2 pdf-actions">
             <button class="btn btn-outline btn-sm" @click="generatePdf" :disabled="generatingPdf">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -202,6 +202,7 @@
               </svg>
               下载 PDF
             </button>
+            <span class="pdf-hint">生成后推送至企业微信时将作为附件发送</span>
           </div>
         </div>
       </div>
@@ -623,6 +624,16 @@ function formatSize(bytes) {
   gap: 8px;
 }
 
+@media (max-width: 480px) {
+  .file-info-row {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+  }
+  .file-info {
+    width: 100%;
+  }
+}
+
 .file-info {
   display: flex;
   align-items: center;
@@ -647,14 +658,27 @@ function formatSize(bytes) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: var(--space-8) 0;
+  padding: var(--space-6) 0;
+}
+
+@media (min-width: 640px) {
+  .extracting-state {
+    padding: var(--space-8) 0;
+  }
 }
 
 .extracting-title {
-  font-size: var(--text-lg);
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--gray-700);
-  margin-top: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+@media (min-width: 640px) {
+  .extracting-title {
+    font-size: var(--text-lg);
+    margin-top: var(--space-4);
+  }
 }
 
 .extracting-file {
@@ -673,14 +697,30 @@ function formatSize(bytes) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-8) 0;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
   color: var(--gray-400);
   font-size: var(--text-sm);
 }
 
+@media (min-width: 640px) {
+  .empty-state {
+    padding: var(--space-8) 0;
+    gap: var(--space-3);
+  }
+}
+
 .empty-state svg {
   opacity: 0.5;
+  width: 32px;
+  height: 32px;
+}
+
+@media (min-width: 640px) {
+  .empty-state svg {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .btn-accent {
@@ -700,21 +740,38 @@ function formatSize(bytes) {
 
 .parse-hint {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-xs);
-  color: var(--gray-400);
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--gray-500);
   margin-bottom: var(--space-2);
-  padding: 6px 10px;
+  padding: 8px 10px;
   background: #fff8e6;
   border: 1px solid #f0db9e;
   border-radius: var(--radius-md);
+  line-height: 1.5;
+}
+
+.parse-hint svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .parse-hint.parsed {
   background: #e8f8ed;
   border-color: #9ed9b0;
   color: #2d7a4a;
+}
+
+@media (min-width: 640px) {
+  .parse-hint {
+    font-size: var(--text-xs);
+    padding: 6px 10px;
+    align-items: center;
+  }
+  .parse-hint svg {
+    margin-top: 0;
+  }
 }
 
 .spinner-inline {
@@ -730,5 +787,37 @@ function formatSize(bytes) {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── PDF Hint ──────────────────────────────────────────────────── */
+.pdf-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pdf-hint {
+  font-size: 11px;
+  color: var(--gray-400);
+  line-height: 1.3;
+}
+
+@media (min-width: 640px) {
+  .pdf-hint {
+    font-size: var(--text-xs);
+  }
+}
+
+@media (max-width: 639px) {
+  .flex-between {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .flex-between .flex.gap-2 {
+    flex-wrap: wrap;
+  }
+  .flex-between .flex.gap-2 .btn {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
 }
 </style>

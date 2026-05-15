@@ -360,14 +360,29 @@ function setFlash(msg, type) {
 <style scoped>
 .inline-form {
   margin-top: var(--space-4);
-  padding: var(--space-5);
+  padding: var(--space-4);
   background: var(--gray-50);
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-lg);
 }
 
+@media (min-width: 640px) {
+  .inline-form {
+    padding: var(--space-5);
+  }
+}
+
 .inline-form .form-group {
   margin-bottom: 0;
+}
+
+@media (max-width: 480px) {
+  .inline-form .flex.gap-2 {
+    flex-direction: column;
+  }
+  .inline-form .flex.gap-2 .btn {
+    width: 100%;
+  }
 }
 
 .badge {
@@ -391,6 +406,8 @@ function setFlash(msg, type) {
 .card-header {
   cursor: pointer;
   user-select: none;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .card-header:hover .chevron {
@@ -401,6 +418,14 @@ function setFlash(msg, type) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .card-actions .btn {
+    font-size: 11px;
+    padding: 5px 8px;
+  }
 }
 
 .chevron {
