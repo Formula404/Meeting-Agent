@@ -58,6 +58,8 @@ class MeetingPDF(FPDF):
         regular_path, bold_path = _find_cjk_font_pair()
         self.add_font("CJK", "", regular_path)
         self.add_font("CJK", "B", bold_path)
+        self.add_font("CJK", "I", regular_path)  # CJK has no italic variant
+        self.add_font("CJK", "BI", bold_path)
         self.set_auto_page_break(auto=True, margin=20)
 
     def header(self) -> None:
@@ -181,9 +183,9 @@ class _HtmlParser(HTMLParser):
             self._underline = False
 
     def handle_data(self, data):
-        text = data.strip()
-        if not text:
+        if not data.strip():
             return
+        text = data
         if self._current_block is None:
             # Text outside block (shouldn't happen with Tiptap output, but fallback)
             self._push_block()
@@ -241,7 +243,14 @@ def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
     # Build text segments for this block
     segments = []
     for run in block.runs:
-        style = "B" if (run.bold or bold) else ""
+        style_parts = []
+        if run.bold or bold:
+            style_parts.append("B")
+        if run.italic:
+            style_parts.append("I")
+        if run.underline:
+            style_parts.append("U")
+        style = "".join(style_parts)
         segments.append((run.text, style))
 
     if not segments:
