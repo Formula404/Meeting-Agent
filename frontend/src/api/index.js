@@ -86,6 +86,11 @@ export default {
     return request('/auth/logout', { method: 'POST' })
   },
 
+  // ── Extraction from text (used by transcription flow) ──
+  extractFromText(meetingText, originalFilename) {
+    return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename } })
+  },
+
   // ── Extraction ──
   uploadFile(file, pdfFile) {
     const form = new FormData()
@@ -176,11 +181,21 @@ export default {
   },
 
   // ── Transcription ──
-  transcribeFile(file, customPrompt) {
+  transcribeFile(file, metadata = {}) {
     const form = new FormData()
     form.append('file', file)
-    form.append('custom_prompt', customPrompt)
+    form.append('meeting_name', metadata.meeting_name || '')
+    form.append('meeting_time', metadata.meeting_time || '')
+    form.append('meeting_location', metadata.meeting_location || '')
+    form.append('meeting_chair', metadata.meeting_chair || '')
+    form.append('meeting_attendees', metadata.meeting_attendees || '')
+    form.append('meeting_departments', metadata.meeting_departments || '')
+    form.append('meeting_recorder', metadata.meeting_recorder || '')
     return request('/transcribe', { method: 'POST', body: form })
+  },
+
+  listTranscriptions() {
+    return request('/transcribe')
   },
 
   getTranscription(id) {
@@ -212,6 +227,10 @@ export default {
       alert('导出失败')
     })
     return Promise.resolve()
+  },
+
+  parseTranscription(id, meetingText) {
+    return request(`/transcribe/${id}/parse`, { method: 'POST', body: { meeting_text: meetingText } })
   },
 
   pushTranscription(id) {

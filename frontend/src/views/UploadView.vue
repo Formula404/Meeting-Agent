@@ -162,7 +162,7 @@
 
     <div v-if="error" class="flash flash-error mt-4">{{ error }}</div>
 
-    <!-- History -->
+    <!-- History: Extraction records -->
     <div v-if="recentList.length" class="card mt-6">
       <h2 class="card-title">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -178,6 +178,7 @@
               <th>文件名</th>
               <th>状态</th>
               <th>附件</th>
+              <th>操作人</th>
               <th>时间</th>
               <th>操作</th>
             </tr>
@@ -193,6 +194,7 @@
                 </span>
               </td>
               <td class="text-sm text-muted">{{ r.pdf_filename ? '有' : '—' }}</td>
+              <td class="text-sm text-muted">{{ r.operator_name || '—' }}</td>
               <td class="text-sm text-muted">{{ formatTime(r.created_at) }}</td>
               <td>
                 <div class="row-actions">
@@ -203,6 +205,58 @@
                     :disabled="deletingId === r.id"
                   >
                     {{ deletingId === r.id ? '删除中...' : '删除' }}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- History: Transcription records -->
+    <div v-if="transcriptionList.length" class="card mt-4">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        最近识别记录
+      </h2>
+      <div class="table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>状态</th>
+              <th>操作人</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in transcriptionList" :key="r.id">
+              <td class="truncate" style="max-width:140px">{{ r.original_filename }}</td>
+              <td>
+                <span class="badge" :class="r.status === 'pushed' ? 'badge-pushed' : 'badge-draft'">
+                  <span v-if="r.status === 'pushed'">✓</span>
+                  <span v-else>○</span>
+                  {{ r.status === 'pushed' ? '已推送' : '草稿' }}
+                </span>
+              </td>
+              <td class="text-sm text-muted">{{ r.operator_name || '—' }}</td>
+              <td class="text-sm text-muted">{{ formatTime(r.created_at) }}</td>
+              <td>
+                <div class="row-actions">
+                  <router-link :to="{ name: 'transcribe-edit', params: { id: r.id } }" class="btn btn-outline btn-sm">查看</router-link>
+                  <button
+                    class="btn btn-ghost btn-sm btn-danger-text"
+                    @click="handleDeleteTranscription(r)"
+                    :disabled="deletingTransId === r.id"
+                  >
+                    {{ deletingTransId === r.id ? '删除中...' : '删除' }}
                   </button>
                 </div>
               </td>
@@ -231,10 +285,13 @@ const resultId = ref(null)
 const selectedFile = ref(null)
 const pdfFile = ref(null)
 const recentList = ref([])
+const transcriptionList = ref([])
 const deletingId = ref(null)
+const deletingTransId = ref(null)
 
 onMounted(() => {
   api.listResults().then((list) => { recentList.value = list }).catch(() => {})
+  api.listTranscriptions().then((list) => { transcriptionList.value = list }).catch(() => {})
 })
 
 function triggerDocxInput() { docxInput.value?.click() }
@@ -329,6 +386,24 @@ async function handleDelete(record) {
     error.value = `删除失败: ${e.message}`
   } finally {
     deletingId.value = null
+  }
+}
+
+async function handleDeleteTranscription(record) {
+  if (!confirm(`确认删除「${record.original_filename}」的识别记录？`)) return
+  const targetId = record?.id ?? record?.result_id
+  if (!targetId) {
+    error.value = '删除失败: 缺少记录 ID'
+    return
+  }
+  deletingTransId.value = targetId
+  try {
+    await api.deleteTranscription(targetId)
+    transcriptionList.value = transcriptionList.value.filter((r) => (r.id ?? r.result_id) !== targetId)
+  } catch (e) {
+    error.value = `删除失败: ${e.message}`
+  } finally {
+    deletingTransId.value = null
   }
 }
 

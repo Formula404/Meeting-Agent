@@ -35,6 +35,8 @@ class Settings:
     WECOM_CORP_ID: str = ""
     WECOM_CORP_SECRET: str = ""
     WECOM_AGENT_ID: int = 0
+    TENCENT_SECRET_ID: str = ""
+    TENCENT_SECRET_KEY: str = ""
 
 
 def get_settings() -> Settings:
@@ -46,4 +48,6 @@ def get_settings() -> Settings:
         WECOM_CORP_ID=_get_env("WECOM_CORP_ID", ""),
         WECOM_CORP_SECRET=_get_env("WECOM_CORP_SECRET", ""),
         WECOM_AGENT_ID=_get_int_env("WECOM_AGENT_ID", "0"),
+        TENCENT_SECRET_ID=_get_env("TENCENT_SECRET_ID", ""),
+        TENCENT_SECRET_KEY=_get_env("TENCENT_SECRET_KEY", ""),
     )

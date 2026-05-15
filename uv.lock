@@ -597,6 +597,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
+    { name = "tencentcloud-sdk-python" },
     { name = "uvicorn" },
 ]
 
@@ -613,6 +614,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.1.2" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "python-multipart", specifier = ">=0.0.28" },
+    { name = "tencentcloud-sdk-python", specifier = ">=3.0.532" },
     { name = "uvicorn", specifier = ">=0.46.0" },
 ]
 
@@ -1187,6 +1189,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
+]
+
+[[package]]
+name = "tencentcloud-sdk-python"
+version = "3.1.96"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/db/e61bc954d2df6800eda0271615b99d6ff505fb5e21b15fb48c5db6920443/tencentcloud_sdk_python-3.1.96.tar.gz", hash = "sha256:65e5143a90414f13c3b5240f9c198655395211b59a511b3d2fd3d9e3d15fa6eb", size = 14834012, upload-time = "2026-05-13T21:25:28.339Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/54/4d1b05f69256609070420f5911cc2032271d53729116bb0821a799203d69/tencentcloud_sdk_python-3.1.96-py2.py3-none-any.whl", hash = "sha256:e94c13b63264bb1cc62c0a926c6d2eb3a8b8d7d037ab1248609449caa10a2468", size = 15729897, upload-time = "2026-05-13T21:25:08.802Z" },
 ]
 
 [[package]]

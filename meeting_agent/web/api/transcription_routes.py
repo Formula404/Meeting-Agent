@@ -11,8 +11,15 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from meeting_agent.transcription.workflow import run_transcription_extraction
+from meeting_agent.transcription.workflow import (
+    run_transcription_extraction,
+    run_transcription_parse,
+)
 from meeting_agent.transcription.docx_export import export_to_docx
+from meeting_agent.services.asr_service import (
+    SUPPORTED_AUDIO_EXTENSIONS,
+    get_transcribed_text,
+)
 from meeting_agent.web.auth import get_current_user
 from meeting_agent.web.converter import convert_result_for_push
 from meeting_agent.services.message_service import send_meeting_summary_from_result
@@ -32,47 +39,98 @@ router = APIRouter(prefix="/api")
 
 INPUT_DIR = Path("data/input/transcriptions")
 OUTPUT_DIR = Path("data/output")
+ASR_AUDIO_DIR = INPUT_DIR / "audio"
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+ASR_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/transcribe")
 async def transcribe(
     file: UploadFile = File(...),
-    custom_prompt: str = Form(""),
+    meeting_name: str = Form(""),
+    meeting_time: str = Form(""),
+    meeting_location: str = Form(""),
+    meeting_chair: str = Form(""),
+    meeting_attendees: str = Form(""),
+    meeting_departments: str = Form(""),
+    meeting_recorder: str = Form(""),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """上传录音转文字文件，执行 LLM 提取，返回结构化会议纪要。
+    """上传录音文件，经过 ASR 语音识别 → 生成会议纪要草稿。
+
+    可附带会议基本信息（名称、时间、地点等），辅助 LLM 生成更准确的纪要。
+
+    阶段一：仅生成会议纪要文本，不提取结构化字段。
+    用户审阅编辑后可调用 /parse 接口进行结构化解析。
 
     Args:
-        file: 录音转文字文件（支持 .docx 或 .txt）。
-        custom_prompt: 用户自定义提取要求。
+        file: 录音文件（支持 wav/mp3/m4a 等常见音频格式）。
+        meeting_name: 会议名称。
+        meeting_time: 会议时间。
+        meeting_location: 会议地点。
+        meeting_chair: 会议主持。
+        meeting_attendees: 与会人员（逗号分隔）。
+        meeting_departments: 参会部门（逗号分隔）。
+        meeting_recorder: 记录人。
     """
     if not file.filename:
         raise HTTPException(400, "文件名为空")
 
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in (".docx", ".txt"):
-        raise HTTPException(400, "仅支持 .docx 或 .txt 文件")
+    if suffix not in SUPPORTED_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            400,
+            f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
+        )
 
-    # 保存文件
-    input_filename = f"{uuid.uuid4().hex}_{file.filename}"
-    input_path = INPUT_DIR / input_filename
-    with input_path.open("wb") as f:
+    # 保存音频文件
+    audio_filename = f"{uuid.uuid4().hex}_{file.filename}"
+    audio_path = ASR_AUDIO_DIR / audio_filename
+    with audio_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # 执行 LLM 提取
+    # Step 1: ASR 语音识别
     try:
-        meeting = run_transcription_extraction(input_path, custom_prompt)
-        result_data = meeting.model_dump(mode="json")
+        transcribed_text = get_transcribed_text(audio_path)
     except Exception as e:
-        raise HTTPException(500, f"LLM 提取失败: {e}") from e
+        raise HTTPException(500, f"语音识别失败: {e}") from e
+
+    if not transcribed_text.strip():
+        raise HTTPException(500, "语音识别结果为空")
+
+    # 将转写文本保存为 .txt 供 LLM 使用
+    text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
+    text_path = INPUT_DIR / text_filename
+    text_path.write_text(transcribed_text, encoding="utf-8")
+
+    # Step 2: LLM 生成会议纪要草稿
+    try:
+        result_data = run_transcription_extraction(
+            text_path,
+            meeting_name=meeting_name,
+            meeting_time=meeting_time,
+            meeting_location=meeting_location,
+            meeting_chair=meeting_chair,
+            meeting_attendees=meeting_attendees,
+            meeting_departments=meeting_departments,
+            meeting_recorder=meeting_recorder,
+        )
+    except Exception as e:
+        # 即使 LLM 生成失败，也保存 ASR 原始结果
+        result_data = {
+            "meeting": transcribed_text,
+            "meeting_date": "",
+            "push_dept": [],
+            "push_user": [],
+            "schedules": [],
+        }
 
     # 持久化
     record = create_transcription_result(
         original_filename=file.filename,
         result_data=result_data,
-        user_prompt=custom_prompt,
+        user_prompt="",
         web_user_id=current_user["id"],
     )
 
@@ -191,6 +249,48 @@ def export_transcription_docx(
         filename=output_filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+class ParseBody(BaseModel):
+    meeting_text: str
+
+
+@router.post("/transcribe/{result_id}/parse")
+def parse_transcription_result(
+    result_id: str,
+    body: ParseBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """阶段二：解析会议纪要 → 按部门分解工作任务。
+
+    用户编辑完会议纪要后调用此接口，将自然语言纪要解析为
+    按部门/中心分类的结构化任务清单，同时提取推送对象与日程。
+    """
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权操作此记录")
+
+    meeting_text = body.meeting_text.strip()
+    if not meeting_text:
+        raise HTTPException(400, "会议纪要内容为空，无法解析")
+
+    try:
+        result_data = run_transcription_parse(meeting_text)
+    except Exception as e:
+        raise HTTPException(500, f"任务分解失败: {e}") from e
+
+    # 持久化解析结果（打上已解析标记）
+    result_data["_parsed"] = True
+    ok = update_transcription_result(result_id, result_data)
+    if not ok:
+        raise HTTPException(404, "更新记录失败")
+
+    return {
+        "status": "parsed",
+        "result": result_data,
+    }
 
 
 @router.post("/transcribe/{result_id}/push")

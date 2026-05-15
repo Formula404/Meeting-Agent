@@ -46,7 +46,7 @@ from meeting_agent.web.models import (
     update_result,
     update_user,
 )
-from meeting_agent.workflow import run_meeting_extraction
+from meeting_agent.workflow import run_meeting_extraction, run_meeting_extraction_from_text
 
 # Ensure DB schema on import
 init_db()
@@ -121,6 +121,47 @@ async def extract(
         "id": record["id"],
         "original_filename": record["original_filename"],
         "pdf_filename": pdf_filename,
+        "created_at": record["created_at"],
+        "result": result_data,
+    }
+
+
+class ExtractFromTextBody(BaseModel):
+    meeting_text: str
+    original_filename: str = ""
+
+
+@router.post("/extract-from-text")
+async def extract_from_text(
+    body: ExtractFromTextBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """接受会议纪要文本，直接运行 LLM 提取结构化数据，结果存入 extraction_results 表。
+
+    用于录音转录流程：用户编辑完会议纪要后点击"解析"，将文本传入此接口，
+    与 .docx 上传流程共用同一套 LLM 解析逻辑和同一张结果表。
+    """
+    meeting_text = body.meeting_text.strip()
+    if not meeting_text:
+        raise HTTPException(400, "会议纪要内容为空")
+
+    # 使用与 .docx 上传相同的 LLM 提取逻辑
+    try:
+        meeting: MeetingOutput = run_meeting_extraction_from_text(meeting_text)
+        result_data = meeting.model_dump(mode="json")
+    except Exception as e:
+        raise HTTPException(500, f"LLM 提取失败: {e}") from e
+
+    # 持久化到 extraction_results 表（与 .docx 上传共用）
+    filename = body.original_filename.strip() or "录音转文字_解析结果"
+    record = create_result(
+        original_filename=filename,
+        result_data=result_data,
+        web_user_id=current_user["id"],
+    )
+    return {
+        "id": record["id"],
+        "original_filename": record["original_filename"],
         "created_at": record["created_at"],
         "result": result_data,
     }

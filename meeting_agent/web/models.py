@@ -232,11 +232,21 @@ def list_results(web_user_id: Optional[int] = None, is_admin: bool = False) -> L
     try:
         if is_admin:
             rows = conn.execute(
-                "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results ORDER BY created_at DESC"
+                "SELECT r.id, r.original_filename, r.pdf_filename, r.status, "
+                "r.created_at, r.updated_at, r.pushed_at, "
+                "COALESCE(u.username, '') AS operator_name "
+                "FROM extraction_results r "
+                "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "ORDER BY r.created_at DESC"
             ).fetchall()
         elif web_user_id is not None:
             rows = conn.execute(
-                "SELECT id, original_filename, pdf_filename, status, created_at, updated_at, pushed_at FROM extraction_results WHERE web_user_id = %s ORDER BY created_at DESC",
+                "SELECT r.id, r.original_filename, r.pdf_filename, r.status, "
+                "r.created_at, r.updated_at, r.pushed_at, "
+                "COALESCE(u.username, '') AS operator_name "
+                "FROM extraction_results r "
+                "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "WHERE r.web_user_id = %s ORDER BY r.created_at DESC",
                 (web_user_id,),
             ).fetchall()
         else:
@@ -249,7 +259,12 @@ def list_results(web_user_id: Optional[int] = None, is_admin: bool = False) -> L
 def get_result(result_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM extraction_results WHERE id = %s", (result_id,)).fetchone()
+        row = conn.execute(
+            "SELECT r.*, COALESCE(u.username, '') AS operator_name "
+            "FROM extraction_results r "
+            "LEFT JOIN web_users u ON r.web_user_id = u.id "
+            "WHERE r.id = %s", (result_id,)
+        ).fetchone()
         if row:
             d = dict(row)
             d["result_json"] = json.loads(d["result_json"])
@@ -336,11 +351,21 @@ def list_transcription_results(web_user_id: Optional[int] = None, is_admin: bool
     try:
         if is_admin:
             rows = conn.execute(
-                "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results ORDER BY created_at DESC"
+                "SELECT r.id, r.original_filename, r.status, "
+                "r.created_at, r.updated_at, r.pushed_at, "
+                "COALESCE(u.username, '') AS operator_name "
+                "FROM transcription_results r "
+                "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "ORDER BY r.created_at DESC"
             ).fetchall()
         elif web_user_id is not None:
             rows = conn.execute(
-                "SELECT id, original_filename, status, created_at, updated_at, pushed_at FROM transcription_results WHERE web_user_id = %s ORDER BY created_at DESC",
+                "SELECT r.id, r.original_filename, r.status, "
+                "r.created_at, r.updated_at, r.pushed_at, "
+                "COALESCE(u.username, '') AS operator_name "
+                "FROM transcription_results r "
+                "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "WHERE r.web_user_id = %s ORDER BY r.created_at DESC",
                 (web_user_id,),
             ).fetchall()
         else:
@@ -353,7 +378,12 @@ def list_transcription_results(web_user_id: Optional[int] = None, is_admin: bool
 def get_transcription_result(result_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM transcription_results WHERE id = %s", (result_id,)).fetchone()
+        row = conn.execute(
+            "SELECT r.*, COALESCE(u.username, '') AS operator_name "
+            "FROM transcription_results r "
+            "LEFT JOIN web_users u ON r.web_user_id = u.id "
+            "WHERE r.id = %s", (result_id,)
+        ).fetchone()
         if row:
             d = dict(row)
             d["result_json"] = json.loads(d["result_json"])
