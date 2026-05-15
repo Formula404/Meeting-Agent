@@ -129,6 +129,7 @@ async def extract(
 class ExtractFromTextBody(BaseModel):
     meeting_text: str
     original_filename: str = ""
+    pdf_filename: str = ""
 
 
 @router.post("/extract-from-text")
@@ -157,11 +158,13 @@ async def extract_from_text(
     record = create_result(
         original_filename=filename,
         result_data=result_data,
+        pdf_filename=body.pdf_filename,
         web_user_id=current_user["id"],
     )
     return {
         "id": record["id"],
         "original_filename": record["original_filename"],
+        "pdf_filename": body.pdf_filename,
         "created_at": record["created_at"],
         "result": result_data,
     }

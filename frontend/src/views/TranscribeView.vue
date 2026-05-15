@@ -180,20 +180,27 @@
             <span class="text-sm text-muted">文件：{{ resultFilename }}</span>
           </div>
           <div class="flex gap-2">
-            <button class="btn btn-outline btn-sm" @click="exportDocx" :disabled="exporting">
+            <button class="btn btn-outline btn-sm" @click="generatePdf" :disabled="generatingPdf">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+              </svg>
+              {{ generatingPdf ? '生成中...' : pdfFilename ? '重新生成 PDF' : '生成 PDF' }}
+            </button>
+            <button
+              v-if="pdfFilename"
+              class="btn btn-success btn-sm"
+              @click="downloadPdf"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                 <polyline points="7 10 12 15 17 10"/>
                 <line x1="12" y1="15" x2="12" y2="3"/>
               </svg>
-              {{ exporting ? '导出中...' : '导出 Word' }}
-            </button>
-            <button
-              class="btn btn-success btn-sm"
-              @click="pushResult"
-              :disabled="pushing"
-            >
-              {{ pushing ? '推送中...' : '推送到企业微信' }}
+              下载 PDF
             </button>
           </div>
         </div>
@@ -227,11 +234,7 @@
           已按部门/中心分解为结构化任务清单，可直接用于内部下发与执行跟踪
         </div>
 
-        <textarea
-          class="form-textarea"
-          v-model="resultData.meeting"
-          rows="12"
-        ></textarea>
+        <MeetingEditor v-model="resultData.meeting" v-model:html="resultData.meeting_html" />
 
         <!-- Parse button (only show when not parsed yet) -->
         <div v-if="!parsed" class="flex gap-2 mt-4">
@@ -356,6 +359,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '../api/index.js'
 import TagInput from '../components/TagInput.vue'
 import ScheduleEditor from '../components/ScheduleEditor.vue'
+import MeetingEditor from '../components/MeetingEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -379,10 +383,10 @@ const resultData = ref(null)
 const resultStatus = ref('draft')
 const resultFilename = ref('')
 const saving = ref(false)
-const exporting = ref(false)
-const pushing = ref(false)
+const generatingPdf = ref(false)
 const parsing = ref(false)
 const parsed = ref(false)
+const pdfFilename = ref('')
 
 const userSuggestions = ref([])
 const deptSuggestions = ref([])
@@ -559,8 +563,8 @@ async function parseResult() {
   try {
     // Save current transcription state first
     await api.updateTranscription(resultId.value, { ...resultData.value })
-    // Call shared extraction pipeline (same as .docx upload) → saves to extraction_results
-    const data = await api.extractFromText(meetingText, resultFilename.value)
+    // Call shared extraction pipeline with optional pdf_filename
+    const data = await api.extractFromText(meetingText, resultFilename.value, pdfFilename.value)
     // Navigate to ReviewView for editing/saving/pushing (shared with docx flow)
     router.push({ name: 'review', params: { id: data.id } })
   } catch (e) {
@@ -571,57 +575,33 @@ async function parseResult() {
   }
 }
 
-// Export docx
-async function exportDocx() {
+// Generate PDF
+async function generatePdf() {
   if (!resultId.value) return
-  exporting.value = true
-  flash.value = ''
-  try {
-    // Save first, then export
-    await api.updateTranscription(resultId.value, { ...resultData.value })
-    await api.exportTranscriptionDocx(resultId.value)
-    flash.value = 'Word 文件已开始下载'
-    flashType.value = 'flash-success'
-  } catch (e) {
-    flash.value = `导出失败: ${e.message}`
-    flashType.value = 'flash-error'
-  } finally {
-    exporting.value = false
-  }
-}
-
-// Push to WeCom
-async function pushResult() {
-  if (!resultId.value) return
-  // Validate
-  const meetingText = (resultData.value.meeting || '').trim()
-  const hasTarget = (resultData.value.push_user?.length || 0) > 0 ||
-                    (resultData.value.push_dept?.length || 0) > 0
-  if (!hasTarget) {
-    error.value = '请至少填写推送用户或推送部门'
-    return
-  }
-  if (!meetingText) {
-    error.value = '会议纪要内容不能为空'
-    return
-  }
-
-  pushing.value = true
+  generatingPdf.value = true
   flash.value = ''
   error.value = ''
   try {
-    // Save first, then push
+    // Save meeting text first, then generate PDF
     await api.updateTranscription(resultId.value, { ...resultData.value })
-    await api.pushTranscription(resultId.value)
-    flash.value = '推送成功！消息和日程已发送到企业微信'
+    const data = await api.generatePdf(resultId.value)
+    pdfFilename.value = data.pdf_filename
+    flash.value = 'PDF 生成成功'
     flashType.value = 'flash-success'
-    resultStatus.value = 'pushed'
   } catch (e) {
-    flash.value = `推送失败: ${e.message}`
+    flash.value = `PDF 生成失败: ${e.message}`
     flashType.value = 'flash-error'
   } finally {
-    pushing.value = false
+    generatingPdf.value = false
   }
+}
+
+// Download PDF
+function downloadPdf() {
+  if (!resultId.value || !pdfFilename.value) return
+  api.downloadPdf(resultId.value, pdfFilename.value)
+  flash.value = 'PDF 文件已开始下载'
+  flashType.value = 'flash-success'
 }
 
 function formatSize(bytes) {

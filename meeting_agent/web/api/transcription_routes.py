@@ -16,6 +16,7 @@ from meeting_agent.transcription.workflow import (
     run_transcription_parse,
 )
 from meeting_agent.transcription.docx_export import export_to_docx
+from meeting_agent.transcription.pdf_export import export_to_pdf, export_to_pdf_from_html
 from meeting_agent.services.asr_service import (
     SUPPORTED_AUDIO_EXTENSIONS,
     get_transcribed_text,
@@ -40,9 +41,11 @@ router = APIRouter(prefix="/api")
 INPUT_DIR = Path("data/input/transcriptions")
 OUTPUT_DIR = Path("data/output")
 ASR_AUDIO_DIR = INPUT_DIR / "audio"
+PDF_DIR = Path("data/input/pdfs")
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ASR_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/transcribe")
@@ -248,6 +251,78 @@ def export_transcription_docx(
         path=str(output_path),
         filename=output_filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@router.post("/transcribe/{result_id}/generate-pdf")
+def generate_transcription_pdf(
+    result_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
+    """将转录结果的会议纪要文本生成为 PDF 文件，保存到 data/input/pdfs/。
+
+    优先使用 HTML 格式（保留加粗/对齐/标题等富文本），
+    如无 HTML 则回退到纯文本。
+
+    后续可传递给 extract-from-text 接口作为附件，也可通过 download-pdf 接口下载预览。
+    """
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权操作此记录")
+
+    result_data = record["result_json"]
+    meeting_html = (result_data.get("meeting_html", "") or "").strip()
+    meeting_text = (result_data.get("meeting", "") or "").strip()
+
+    if not meeting_html and not meeting_text:
+        raise HTTPException(400, "会议纪要内容为空，无法生成 PDF")
+
+    stem = Path(record["original_filename"]).stem
+    pdf_filename = f"{uuid.uuid4().hex}_{stem}.pdf"
+    output_path = PDF_DIR / pdf_filename
+
+    try:
+        if meeting_html:
+            export_to_pdf_from_html(meeting_html, output_path)
+        else:
+            export_to_pdf(meeting_text, output_path)
+    except Exception as e:
+        raise HTTPException(500, f"PDF 生成失败: {e}") from e
+
+    return {"status": "ok", "pdf_filename": pdf_filename}
+
+
+@router.get("/transcribe/{result_id}/download-pdf")
+def download_transcription_pdf(
+    result_id: str,
+    pdf_filename: str = "",
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Any:
+    """下载转录结果的 PDF 文件。
+
+    需提供 generate-pdf 返回的 pdf_filename 作为查询参数。
+    """
+    from fastapi.responses import FileResponse
+
+    record = get_transcription_result(result_id)
+    if not record:
+        raise HTTPException(404, "结果不存在")
+    if current_user.get("role") != "admin" and record.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权操作此记录")
+
+    if not pdf_filename:
+        raise HTTPException(400, "请提供 pdf_filename 查询参数")
+
+    pdf_path = PDF_DIR / pdf_filename
+    if not pdf_path.exists():
+        raise HTTPException(404, "PDF 文件不存在，请先调用 generate-pdf 生成")
+
+    return FileResponse(
+        path=str(pdf_path),
+        filename=pdf_filename,
+        media_type="application/pdf",
     )
 
 

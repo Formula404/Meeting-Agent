@@ -87,8 +87,8 @@ export default {
   },
 
   // ── Extraction from text (used by transcription flow) ──
-  extractFromText(meetingText, originalFilename) {
-    return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename } })
+  extractFromText(meetingText, originalFilename, pdfFilename = '') {
+    return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename, pdf_filename: pdfFilename } })
   },
 
   // ── Extraction ──
@@ -225,6 +225,30 @@ export default {
     }).catch(err => {
       console.error('导出失败:', err)
       alert('导出失败')
+    })
+    return Promise.resolve()
+  },
+
+  generatePdf(id) {
+    return request(`/transcribe/${id}/generate-pdf`, { method: 'POST' })
+  },
+
+  downloadPdf(id, pdfFilename) {
+    const token = getToken()
+    const url = `${BASE}/transcribe/${id}/download-pdf?pdf_filename=${encodeURIComponent(pdfFilename)}`
+    fetch(url, { headers: { ...authHeaders() } }).then(res => {
+      if (!res.ok) throw new Error('下载失败')
+      return res.blob()
+    }).then(blob => {
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = pdfFilename
+      link.click()
+      URL.revokeObjectURL(blobUrl)
+    }).catch(err => {
+      console.error('下载失败:', err)
+      alert('下载失败')
     })
     return Promise.resolve()
   },
