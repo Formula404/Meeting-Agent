@@ -1,28 +1,14 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: meeting-agent-db
-    environment:
-      POSTGRES_DB: meeting_agent
-      POSTGRES_USER: meeting
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U meeting -d meeting_agent"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
   meeting-agent:
     build: .
     container_name: meeting-agent
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # PostgreSQL — use internal Docker network hostname
-      DATABASE_URL: postgresql://meeting:${POSTGRES_PASSWORD}@postgres:5432/meeting_agent
+      # PostgreSQL — use existing DB on host (ai_document_db, port 5432)
+      DATABASE_URL: postgresql://meeting:${POSTGRES_PASSWORD}@host.docker.internal:5432/meeting_agent
       # Forward from .env (docker-compose reads project .env automatically)
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
@@ -35,10 +21,4 @@ services:
     volumes:
       # Uploaded files (docx, pdf) — still on disk, not in DB
       - ./data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  pgdata:
