@@ -5,11 +5,9 @@ services:
     environment:
       POSTGRES_DB: meeting_agent
       POSTGRES_USER: meeting
-      POSTGRES_PASSWORD: meeting123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U meeting -d meeting_agent"]
       interval: 5s
@@ -24,16 +22,16 @@ services:
       - "8000:8000"
     environment:
       # PostgreSQL — use internal Docker network hostname
-      DATABASE_URL: postgresql://meeting:meeting123@postgres:5432/meeting_agent
+      DATABASE_URL: postgresql://meeting:${POSTGRES_PASSWORD}@postgres:5432/meeting_agent
       # Forward from .env (docker-compose reads project .env automatically)
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
       MODEL_NAME: ${MODEL_NAME}
-      TEMPERATURE: ${TEMPERATURE:-0.2}
-      WECOM_CORP_ID: ${WECOM_CORP_ID:-}
-      WECOM_CORP_SECRET: ${WECOM_CORP_SECRET:-}
-      WECOM_AGENT_ID: ${WECOM_AGENT_ID:-0}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      TEMPERATURE: ${TEMPERATURE}
+      WECOM_CORP_ID: ${WECOM_CORP_ID}
+      WECOM_CORP_SECRET: ${WECOM_CORP_SECRET}
+      WECOM_AGENT_ID: ${WECOM_AGENT_ID}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     volumes:
       # Uploaded files (docx, pdf) — still on disk, not in DB
       - ./data:/app/data
