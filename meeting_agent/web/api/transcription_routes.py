@@ -20,6 +20,7 @@ from meeting_agent.transcription.pdf_export import export_to_pdf, export_to_pdf_
 from meeting_agent.services.asr_service import (
     SUPPORTED_AUDIO_EXTENSIONS,
     get_transcribed_text,
+    get_transcribed_text_from_url,
 )
 from meeting_agent.web.auth import get_current_user
 from meeting_agent.web.converter import convert_result_for_push
@@ -68,7 +69,7 @@ async def transcribe(
     用户审阅编辑后可调用 /parse 接口进行结构化解析。
 
     Args:
-        file: 录音文件（支持 wav/mp3/m4a 等常见音频格式）。
+        file: 录音文件（支持 wav/mp3/m4a 等常见音频格式，≤5MB）。
         meeting_name: 会议名称。
         meeting_time: 会议时间。
         meeting_location: 会议地点。
@@ -140,6 +141,96 @@ async def transcribe(
     return {
         "id": record["id"],
         "original_filename": record["original_filename"],
+        "created_at": record["created_at"],
+        "result": result_data,
+    }
+
+
+class TranscribeUrlBody(BaseModel):
+    """URL 转写请求体"""
+    audio_url: str
+    audio_filename: str = ""
+    meeting_name: str = ""
+    meeting_time: str = ""
+    meeting_location: str = ""
+    meeting_chair: str = ""
+    meeting_attendees: str = ""
+    meeting_departments: str = ""
+    meeting_recorder: str = ""
+
+
+@router.post("/transcribe/url")
+async def transcribe_from_url(
+    body: TranscribeUrlBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """通过音频文件 URL 进行语音识别 → 生成会议纪要草稿。
+
+    适用于大于 5MB 的录音文件。需提供公网可访问的音频文件 URL
+    （如阿里云 OSS 签名 URL），由腾讯云 ASR 服务拉取识别。
+
+    URL 文件大小上限：腾讯云 ASR URL 拉取模式支持最大 5GB 的音频文件。
+    """
+    audio_url = body.audio_url.strip()
+    if not audio_url:
+        raise HTTPException(400, "音频 URL 不能为空")
+
+    # 校验文件扩展名（从 URL 或 audio_filename 推断）
+    url_path = Path(audio_url.split("?")[0])  # 去掉查询参数
+    filename = body.audio_filename or url_path.name
+    suffix = Path(filename).suffix.lower()
+    if suffix and suffix not in SUPPORTED_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            400,
+            f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
+        )
+
+    # Step 1: ASR 语音识别（URL 拉取模式，无 5MB 限制）
+    try:
+        transcribed_text = get_transcribed_text_from_url(audio_url)
+    except Exception as e:
+        raise HTTPException(500, f"语音识别失败: {e}") from e
+
+    if not transcribed_text.strip():
+        raise HTTPException(500, "语音识别结果为空")
+
+    # 将转写文本保存为 .txt 供 LLM 使用
+    text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
+    text_path = INPUT_DIR / text_filename
+    text_path.write_text(transcribed_text, encoding="utf-8")
+
+    # Step 2: LLM 生成会议纪要草稿
+    try:
+        result_data = run_transcription_extraction(
+            text_path,
+            meeting_name=body.meeting_name,
+            meeting_time=body.meeting_time,
+            meeting_location=body.meeting_location,
+            meeting_chair=body.meeting_chair,
+            meeting_attendees=body.meeting_attendees,
+            meeting_departments=body.meeting_departments,
+            meeting_recorder=body.meeting_recorder,
+        )
+    except Exception as e:
+        result_data = {
+            "meeting": transcribed_text,
+            "meeting_date": "",
+            "push_dept": [],
+            "push_user": [],
+            "schedules": [],
+        }
+
+    # 持久化
+    record = create_transcription_result(
+        original_filename=filename,
+        result_data=result_data,
+        user_prompt="",
+        web_user_id=current_user["id"],
+    )
+
+    return {
+        "id": record["id"],
+        "original_filename": filename,
         "created_at": record["created_at"],
         "result": result_data,
     }

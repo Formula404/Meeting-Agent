@@ -35,7 +35,7 @@ def _get_client() -> asr_client.AsrClient:
 
 
 def create_rec_task(audio_data: bytes) -> int:
-    """提交录音文件识别任务，返回 TaskId。
+    """提交录音文件识别任务（直传模式），返回 TaskId。
 
     Args:
         audio_data: 音频文件原始字节数据（≤5MB）。
@@ -59,6 +59,34 @@ def create_rec_task(audio_data: bytes) -> int:
         resp = client.CreateRecTask(req)
     except TencentCloudSDKException as e:
         raise RuntimeError(f"创建 ASR 任务失败: {e}") from e
+
+    return resp.Data.TaskId
+
+
+def create_rec_task_from_url(audio_url: str) -> int:
+    """提交录音文件识别任务（URL 拉取模式），返回 TaskId。
+
+    通过公网可访问的音频文件 URL 提交识别，无 5MB 大小限制。
+    URL 需保证腾讯云 ASR 服务可正常访问。
+
+    Args:
+        audio_url: 音频文件的公网可访问 URL。
+
+    Returns:
+        识别任务的 TaskId。
+    """
+    client = _get_client()
+    req = models.CreateRecTaskRequest()
+    req.EngineModelType = "16k_zh"
+    req.ChannelNum = 1
+    req.ResTextFormat = 2
+    req.SourceType = 0  # URL 拉取数据
+    req.Url = audio_url
+
+    try:
+        resp = client.CreateRecTask(req)
+    except TencentCloudSDKException as e:
+        raise RuntimeError(f"创建 ASR 任务(URL)失败: {e}") from e
 
     return resp.Data.TaskId
 
@@ -124,7 +152,7 @@ def wait_for_result(task_id: int) -> str:
 
 
 def get_transcribed_text(audio_path: Path) -> str:
-    """完整流程：读取音频文件 → 提交 ASR 任务 → 等待结果 → 返回转写文本。
+    """完整流程：读取音频文件 → 提交 ASR 任务（直传） → 等待结果 → 返回转写文本。
 
     Args:
         audio_path: 音频文件路径。
@@ -134,4 +162,20 @@ def get_transcribed_text(audio_path: Path) -> str:
     """
     audio_data = audio_path.read_bytes()
     task_id = create_rec_task(audio_data)
+    return wait_for_result(task_id)
+
+
+def get_transcribed_text_from_url(audio_url: str) -> str:
+    """完整流程：通过 URL 提交 ASR 任务 → 等待结果 → 返回转写文本。
+
+    无 5MB 大小限制，适用于大文件录音。
+    需保证 URL 可被腾讯云 ASR 服务公网访问。
+
+    Args:
+        audio_url: 音频文件的公网可访问 URL。
+
+    Returns:
+        语音转写文本。
+    """
+    task_id = create_rec_task_from_url(audio_url)
     return wait_for_result(task_id)

@@ -37,47 +37,102 @@
           </svg>
           上传录音文件
         </h2>
-        <div
-          class="upload-zone"
-          :class="{ dragover: dragging }"
-          @dragover.prevent="dragging = true"
-          @dragleave.prevent="dragging = false"
-          @drop.prevent="onDrop"
-          @click="triggerFileInput"
-        >
-          <div class="upload-zone-icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
+
+        <!-- Mode toggle: file upload vs URL input -->
+        <div class="mode-toggle">
+          <button
+            class="mode-toggle-btn"
+            :class="{ active: inputMode === 'file' }"
+            @click="inputMode = 'file'"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
-          </div>
-          <div class="upload-zone-text">拖拽或点击选择录音文件</div>
-          <div class="upload-zone-hint">支持 wav/mp3/m4a/flac 等常见音频格式</div>
-          <input
-            ref="fileInput"
-            type="file"
-            accept=".wav,.mp3,.m4a,.flv,.mp4,.wma,.3gp,.amr,.aac,.ogg,.flac"
-            style="display:none"
-            @change="onFileChange"
-          />
-        </div>
-        <div v-if="selectedFile" class="file-info-row mt-4">
-          <div class="file-info">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/>
-              <line x1="8" y1="23" x2="16" y2="23"/>
+            文件上传
+          </button>
+          <button
+            class="mode-toggle-btn"
+            :class="{ active: inputMode === 'url' }"
+            @click="inputMode = 'url'"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
             </svg>
-            <span>{{ selectedFile.name }}</span>
-            <span class="file-size">（{{ formatSize(selectedFile.size) }}）</span>
-          </div>
-          <button class="btn btn-ghost btn-sm" @click.stop="selectedFile = null">更换</button>
+            URL 输入
+          </button>
         </div>
+
+        <!-- File upload mode -->
+        <template v-if="inputMode === 'file'">
+          <div
+            class="upload-zone"
+            :class="{ dragover: dragging }"
+            @dragover.prevent="dragging = true"
+            @dragleave.prevent="dragging = false"
+            @drop.prevent="onDrop"
+            @click="triggerFileInput"
+          >
+            <div class="upload-zone-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </div>
+            <div class="upload-zone-text">拖拽或点击选择录音文件</div>
+            <div class="upload-zone-hint">支持 wav/mp3/m4a/flac 等常见音频格式，≤5MB</div>
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".wav,.mp3,.m4a,.flv,.mp4,.wma,.3gp,.amr,.aac,.ogg,.flac"
+              style="display:none"
+              @change="onFileChange"
+            />
+          </div>
+          <div v-if="selectedFile" class="file-info-row mt-4">
+            <div class="file-info">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              <span>{{ selectedFile.name }}</span>
+              <span class="file-size">（{{ formatSize(selectedFile.size) }}）</span>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click.stop="selectedFile = null">更换</button>
+          </div>
+        </template>
+
+        <!-- URL input mode -->
+        <template v-else>
+          <div class="url-input-area">
+            <div class="form-group">
+              <label class="form-label">音频文件 URL</label>
+              <input
+                class="form-input"
+                v-model="audioUrl"
+                placeholder="https://oss.aliyuncs.com/meeting-audio.wav"
+              />
+              <span class="form-hint">输入公网可访问的音频文件直链，无大小限制</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">文件名 <span class="text-xs text-muted">（可选）</span></label>
+              <input
+                class="form-input"
+                v-model="audioFilename"
+                placeholder="根据 URL 自动推断，也可手动指定"
+              />
+            </div>
+          </div>
+        </template>
+
         <div class="flex gap-2 mt-4">
-          <button class="btn btn-primary" @click="startTranscribe" :disabled="!selectedFile">
+          <button class="btn btn-primary" @click="startTranscribe" :disabled="!canTranscribe">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
@@ -87,8 +142,8 @@
         </div>
       </div>
 
-      <!-- Meeting info card (shown when file selected) -->
-      <div v-if="selectedFile" class="card mt-4">
+      <!-- Meeting info card (shown when file selected or URL entered) -->
+      <div v-if="showMeetingInfo" class="card mt-4">
         <h2 class="card-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -161,7 +216,7 @@
           <div class="spinner-dot"></div>
         </div>
         <div class="extracting-title">腾讯云 ASR 语音识别中...</div>
-        <div class="extracting-file">{{ selectedFile?.name }}</div>
+        <div class="extracting-file">{{ displayFileName }}</div>
         <div class="extracting-desc">音频时长越长等待越久，请耐心等候</div>
       </div>
     </div>
@@ -372,6 +427,11 @@ const fileInput = ref(null)
 const dragging = ref(false)
 const selectedFile = ref(null)
 
+// URL input mode state
+const inputMode = ref('file')
+const audioUrl = ref('')
+const audioFilename = ref('')
+
 // Processing state
 const processing = ref(false)
 const error = ref('')
@@ -400,6 +460,24 @@ const meetingForm = reactive({
   attendees: [],
   departments: [],
   recorder: [],
+})
+
+const canTranscribe = computed(() => {
+  if (inputMode.value === 'file') return !!selectedFile.value
+  return audioUrl.value.trim().length > 0
+})
+
+const showMeetingInfo = computed(() => {
+  if (inputMode.value === 'file') return !!selectedFile.value
+  return audioUrl.value.trim().length > 0
+})
+
+const displayFileName = computed(() => {
+  if (inputMode.value === 'file' && selectedFile.value) return selectedFile.value.name
+  if (inputMode.value === 'url' && audioUrl.value.trim()) {
+    return audioFilename.value.trim() || audioUrl.value.trim().split('/').pop() || audioUrl.value.trim()
+  }
+  return ''
 })
 
 onMounted(async () => {
@@ -468,6 +546,8 @@ function setFile(file) {
 
 function clearAll() {
   selectedFile.value = null
+  audioUrl.value = ''
+  audioFilename.value = ''
   error.value = ''
   Object.assign(meetingForm, {
     name: '', time: '', location: '',
@@ -477,20 +557,31 @@ function clearAll() {
 
 // Start transcription
 async function startTranscribe() {
-  if (!selectedFile.value) return
+  if (!canTranscribe.value) return
   processing.value = true
   error.value = ''
+
+  const metadata = {
+    meeting_name: meetingForm.name,
+    meeting_time: meetingForm.time,
+    meeting_location: meetingForm.location,
+    meeting_chair: meetingForm.chair.join(','),
+    meeting_attendees: meetingForm.attendees.join(','),
+    meeting_departments: meetingForm.departments.join(','),
+    meeting_recorder: meetingForm.recorder.join(','),
+  }
+
   try {
-    const metadata = {
-      meeting_name: meetingForm.name,
-      meeting_time: meetingForm.time,
-      meeting_location: meetingForm.location,
-      meeting_chair: meetingForm.chair.join(','),
-      meeting_attendees: meetingForm.attendees.join(','),
-      meeting_departments: meetingForm.departments.join(','),
-      meeting_recorder: meetingForm.recorder.join(','),
+    let data
+    if (inputMode.value === 'url') {
+      data = await api.transcribeUrl(audioUrl.value.trim(), {
+        ...metadata,
+        audio_filename: audioFilename.value.trim(),
+      })
+    } else {
+      if (!selectedFile.value) return
+      data = await api.transcribeFile(selectedFile.value, metadata)
     }
-    const data = await api.transcribeFile(selectedFile.value, metadata)
     resultId.value = data.id
     resultFilename.value = data.original_filename
     resultStatus.value = 'draft'
@@ -720,6 +811,72 @@ function formatSize(bytes) {
   .empty-state svg {
     width: 40px;
     height: 40px;
+  }
+}
+
+/* ── Mode Toggle ─────────────────────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: var(--space-4);
+  background: var(--gray-100);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  width: fit-content;
+}
+
+.mode-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--gray-500);
+  background: transparent;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mode-toggle-btn:hover {
+  color: var(--gray-700);
+}
+
+.mode-toggle-btn.active {
+  color: var(--primary-700);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.mode-toggle-btn svg {
+  flex-shrink: 0;
+}
+
+/* ── URL Input Area ─────────────────────────────────────────────── */
+.url-input-area {
+  padding: var(--space-4);
+  background: var(--gray-50);
+  border: 1.5px dashed var(--gray-300);
+  border-radius: var(--radius-md);
+}
+
+.url-input-area .form-group + .form-group {
+  margin-top: var(--space-3);
+}
+
+.form-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+@media (min-width: 640px) {
+  .form-hint {
+    font-size: var(--text-xs);
   }
 }
 

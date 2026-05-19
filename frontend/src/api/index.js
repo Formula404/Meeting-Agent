@@ -194,6 +194,23 @@ export default {
     return request('/transcribe', { method: 'POST', body: form })
   },
 
+  transcribeUrl(audioUrl, metadata = {}) {
+    return request('/transcribe/url', {
+      method: 'POST',
+      body: {
+        audio_url: audioUrl,
+        audio_filename: metadata.audio_filename || '',
+        meeting_name: metadata.meeting_name || '',
+        meeting_time: metadata.meeting_time || '',
+        meeting_location: metadata.meeting_location || '',
+        meeting_chair: metadata.meeting_chair || '',
+        meeting_attendees: metadata.meeting_attendees || '',
+        meeting_departments: metadata.meeting_departments || '',
+        meeting_recorder: metadata.meeting_recorder || '',
+      },
+    })
+  },
+
   listTranscriptions() {
     return request('/transcribe')
   },
