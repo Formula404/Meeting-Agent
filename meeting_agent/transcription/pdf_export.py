@@ -1,6 +1,13 @@
 """将会议纪要文本导出为 PDF 文件，支持纯文本和 HTML 格式输入。"""
 
-import math
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -94,6 +101,11 @@ class _Block:
         self.align = align
         self.runs: list[_TextRun] = []
         self.children: list["_Block"] = []  # for list items
+
+
+def _collapse_html_whitespace(text: str) -> str:
+    """Match browser-style whitespace collapsing for parsed HTML text nodes."""
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class _HtmlParser(HTMLParser):
@@ -207,7 +219,7 @@ class _HtmlParser(HTMLParser):
                 )
 
 
-def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
+def _render_block_legacy(pdf: MeetingPDF, block: _Block, indent: int = 0):
     """渲染一个块级元素到 PDF。"""
     # Set font size based on tag
     if block.tag == "h1":
@@ -234,6 +246,8 @@ def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
     align = block.align
 
     if block.tag == "hr":
+        if pdf.get_y() + 8 > pdf.page_break_trigger:
+            pdf.add_page()
         pdf.set_x(pdf.l_margin)
         pdf.set_draw_color(200, 200, 200)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
@@ -242,18 +256,26 @@ def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
 
     # Build text segments for this block
     segments = []
+    has_bold = bold
+    has_italic = False
+    has_underline = False
     for run in block.runs:
         style_parts = []
         if run.bold or bold:
             style_parts.append("B")
+            has_bold = True
         if run.italic:
             style_parts.append("I")
+            has_italic = True
         if run.underline:
             style_parts.append("U")
+            has_underline = True
         style = "".join(style_parts)
         segments.append((run.text, style))
 
     if not segments:
+        if pdf.get_y() + line_h > pdf.page_break_trigger:
+            pdf.add_page()
         pdf.ln(line_h * 0.6)
         return
 
@@ -273,26 +295,259 @@ def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
     avail_w = pdf.epw - indent
     pdf.set_x(left_x)
 
-    if align == "left":
-        # write() advances y only on line wrap; manual y calc after all segments
-        y_start = pdf.get_y()
-        pdf.set_x(left_x)
-        for text, style in segments:
-            pdf.set_font("CJK", style, font_size)
-            pdf.write(line_h, text)
-        # Calculate total height from total text width (CJK wraps per char)
-        total_w = sum(pdf.get_string_width(t) for t, _ in segments)
-        num_lines = max(1, math.ceil(total_w / avail_w))
-        pdf.set_y(y_start + num_lines * line_h)
-        pdf.ln(line_h * 0.15)
-    else:
-        # Center/right: concatenate, render with multi_cell
-        full_text = "".join(t for t, _ in segments)
-        first_style = segments[0][1] if segments else ""
-        pdf.set_font("CJK", first_style, font_size)
-        pdf.set_x(left_x)
-        pdf.multi_cell(avail_w, line_h, full_text, align=align)
-        pdf.ln(line_h * 0.15)
+    full_text = _collapse_html_whitespace("".join(t for t, _ in segments))
+    if not full_text:
+        if pdf.get_y() + line_h > pdf.page_break_trigger:
+            pdf.add_page()
+        pdf.ln(line_h * 0.6)
+        return
+    style = ""
+    if has_bold:
+        style += "B"
+    if has_italic:
+        style += "I"
+    if has_underline:
+        style += "U"
+
+    if pdf.get_y() + line_h > pdf.page_break_trigger:
+        pdf.add_page()
+    pdf.set_font("CJK", style, font_size)
+    pdf.set_x(left_x)
+    pdf.multi_cell(avail_w, line_h, full_text, align=align)
+    pdf.ln(line_h * 0.15)
+
+
+def _wrap_pdf_text(pdf: MeetingPDF, text: str, max_width: float) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    for char in text:
+        candidate = current + char
+        if current and pdf.get_string_width(candidate) > max_width:
+            lines.append(current.rstrip())
+            current = char.lstrip()
+        else:
+            current = candidate
+    if current:
+        lines.append(current.rstrip())
+    return lines or [""]
+
+
+def _block_text(block: _Block) -> str:
+    return _collapse_html_whitespace("".join(run.text for run in block.runs))
+
+
+def _merge_standalone_order_markers(blocks: list[_Block]) -> list[_Block]:
+    merged: list[_Block] = []
+    i = 0
+    marker_re = re.compile(r"^\d+\s*[.)．、]$")
+    while i < len(blocks):
+        block = blocks[i]
+        text = _block_text(block)
+        if (
+            block.tag != "li"
+            and marker_re.match(text)
+            and i + 1 < len(blocks)
+            and blocks[i + 1].tag not in ("hr", "li")
+        ):
+            next_block = blocks[i + 1]
+            next_block.runs.insert(0, _TextRun(f"{text} "))
+            merged.append(next_block)
+            i += 2
+            continue
+        merged.append(block)
+        i += 1
+    return merged
+
+
+def _merge_standalone_order_markers(blocks: list[_Block]) -> list[_Block]:
+    merged: list[_Block] = []
+    marker_re = re.compile(r"^\d+\s*(?:[.)]|\uff0e|\u3001)$")
+    i = 0
+    while i < len(blocks):
+        block = blocks[i]
+        text = _block_text(block)
+        if (
+            block.tag != "li"
+            and marker_re.match(text)
+            and i + 1 < len(blocks)
+            and blocks[i + 1].tag not in ("hr", "li")
+        ):
+            next_block = blocks[i + 1]
+            next_block.runs.insert(0, _TextRun(f"{text} "))
+            merged.append(next_block)
+            i += 2
+            continue
+        merged.append(block)
+        i += 1
+    return merged
+
+
+def _merge_standalone_order_lines(lines: list[str]) -> list[str]:
+    merged: list[str] = []
+    marker_re = re.compile(r"^\d+\s*(?:[.)]|\uff0e|\u3001)$")
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if marker_re.match(line):
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines):
+                merged.append(f"{line} {lines[j].strip()}")
+                i = j + 1
+                continue
+        merged.append(line)
+        i += 1
+    return merged
+
+
+def _browser_candidates() -> list[str]:
+    candidates = [
+        "msedge",
+        "chrome",
+        "chromium",
+        "google-chrome",
+        "chromium-browser",
+    ]
+    paths = []
+    for name in candidates:
+        found = shutil.which(name)
+        if found:
+            paths.append(found)
+
+    roots = [
+        os.environ.get("PROGRAMFILES"),
+        os.environ.get("PROGRAMFILES(X86)"),
+        os.environ.get("LOCALAPPDATA"),
+    ]
+    relative_paths = [
+        ("Microsoft", "Edge", "Application", "msedge.exe"),
+        ("Google", "Chrome", "Application", "chrome.exe"),
+    ]
+    for root in filter(None, roots):
+        for parts in relative_paths:
+            path = Path(root, *parts)
+            if path.exists():
+                paths.append(str(path))
+
+    return list(dict.fromkeys(paths))
+
+
+def _build_print_html(html_text: str) -> str:
+    return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none';">
+  <style>
+    @page {{
+      size: A4;
+      margin: 18mm 16mm;
+    }}
+    * {{
+      box-sizing: border-box;
+    }}
+    html, body {{
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #111827;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "Noto Sans SC", "PingFang SC", sans-serif;
+      font-size: 12pt;
+      line-height: 1.65;
+    }}
+    h1, h2, h3 {{
+      break-after: avoid;
+      page-break-after: avoid;
+      line-height: 1.35;
+      margin: 0 0 8pt;
+      font-weight: 700;
+    }}
+    h1 {{ font-size: 18pt; text-align: center; margin-bottom: 12pt; }}
+    h2 {{ font-size: 15pt; margin-top: 12pt; }}
+    h3 {{ font-size: 13pt; margin-top: 10pt; }}
+    p {{
+      margin: 0 0 6pt;
+      white-space: normal;
+    }}
+    ol, ul {{
+      margin: 4pt 0 8pt;
+      padding-left: 1.7em;
+    }}
+    li {{
+      margin: 3pt 0;
+      padding-left: 0.15em;
+    }}
+    li > p {{
+      display: inline;
+      margin: 0;
+    }}
+    li > p + p {{
+      display: block;
+      margin-top: 4pt;
+    }}
+    hr {{
+      border: 0;
+      border-top: 1px solid #d1d5db;
+      margin: 10pt 0;
+    }}
+    strong, b {{ font-weight: 700; }}
+    em, i {{ font-style: italic; }}
+    u {{ text-decoration: underline; }}
+  </style>
+</head>
+<body>
+  <main>{html_text}</main>
+</body>
+</html>"""
+
+
+def _print_html_with_browser(html_text: str, output_path: Path) -> bool:
+    browsers = _browser_candidates()
+    if not browsers:
+        return False
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="meeting_pdf_") as tmp_dir:
+        html_path = Path(tmp_dir) / "print.html"
+        html_path.write_text(_build_print_html(html_text), encoding="utf-8")
+        for browser in browsers:
+            for headless_arg in ("--headless=new", "--headless"):
+                cmd = [
+                    browser,
+                    headless_arg,
+                    "--disable-gpu",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--no-pdf-header-footer",
+                    "--print-to-pdf-no-header",
+                    f"--print-to-pdf={output_path.resolve()}",
+                    html_path.resolve().as_uri(),
+                ]
+                try:
+                    subprocess.run(
+                        cmd,
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=60,
+                    )
+                except Exception:
+                    continue
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    return True
+    return False
+
+
+def _plain_lines_to_html(lines: list[str]) -> str:
+    parts = []
+    for line in lines:
+        text = line.strip()
+        if text:
+            parts.append(f"<p>{escape(text)}</p>")
+        else:
+            parts.append("<p><br></p>")
+    return "".join(parts)
 
 
 def export_to_pdf(meeting_text: str, output_path: str | Path) -> Path:
@@ -308,10 +563,13 @@ def export_to_pdf(meeting_text: str, output_path: str | Path) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    lines = _merge_standalone_order_lines(meeting_text.strip().split("\n"))
+    if _print_html_with_browser(_plain_lines_to_html(lines), output_path):
+        return output_path
+
     pdf = MeetingPDF()
     pdf.add_page()
 
-    lines = meeting_text.strip().split("\n")
     for i, line in enumerate(lines):
         line = line.strip()
         if not line:
@@ -338,6 +596,91 @@ def export_to_pdf(meeting_text: str, output_path: str | Path) -> Path:
     return output_path
 
 
+def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
+    if block.tag == "h1":
+        font_size = 16
+        line_h = 8
+        bold = True
+    elif block.tag == "h2":
+        font_size = 14
+        line_h = 7
+        bold = True
+    elif block.tag == "h3":
+        font_size = 12
+        line_h = 6.5
+        bold = True
+    else:
+        font_size = 11
+        line_h = 6.5
+        bold = False
+
+    if block.tag == "hr":
+        if pdf.get_y() + 8 > pdf.page_break_trigger:
+            pdf.add_page()
+        pdf.set_x(pdf.l_margin)
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+        pdf.ln(6)
+        return
+
+    has_bold = bold
+    has_italic = False
+    has_underline = False
+    text_parts: list[str] = []
+    for run in block.runs:
+        has_bold = has_bold or run.bold
+        has_italic = has_italic or run.italic
+        has_underline = has_underline or run.underline
+        text_parts.append(run.text)
+
+    full_text = _collapse_html_whitespace("".join(text_parts))
+    if not full_text:
+        if pdf.get_y() + line_h > pdf.page_break_trigger:
+            pdf.add_page()
+        pdf.ln(line_h * 0.6)
+        return
+
+    style = ""
+    if has_bold:
+        style += "B"
+    if has_italic:
+        style += "I"
+    if has_underline:
+        style += "U"
+
+    if pdf.get_y() + line_h > pdf.page_break_trigger:
+        pdf.add_page()
+    pdf.set_font("CJK", style, font_size)
+
+    left_x = pdf.l_margin + indent
+    avail_w = pdf.epw - indent
+    align = block.align
+
+    if block.tag == "li":
+        if getattr(block, "list_type", None) == "ol":
+            prefix = f"{getattr(block, 'list_index', 1)}."
+        else:
+            prefix = "-"
+        prefix_w = max(8, pdf.get_string_width(prefix) + 3)
+        body_x = left_x + prefix_w
+        body_w = max(10, avail_w - prefix_w)
+        for idx, line in enumerate(_wrap_pdf_text(pdf, full_text, body_w)):
+            if pdf.get_y() + line_h > pdf.page_break_trigger:
+                pdf.add_page()
+            y = pdf.get_y()
+            if idx == 0:
+                pdf.set_xy(left_x, y)
+                pdf.cell(prefix_w, line_h, prefix, align="R")
+            pdf.set_xy(body_x, y)
+            pdf.cell(body_w, line_h, line)
+            pdf.set_y(y + line_h)
+    else:
+        pdf.set_x(left_x)
+        pdf.multi_cell(avail_w, line_h, full_text, align=align)
+
+    pdf.ln(line_h * 0.15)
+
+
 def export_to_pdf_from_html(html_text: str, output_path: str | Path) -> Path:
     """将 HTML 格式的会议纪要导出为 PDF，保留富文本格式。
 
@@ -354,13 +697,17 @@ def export_to_pdf_from_html(html_text: str, output_path: str | Path) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if _print_html_with_browser(html_text, output_path):
+        return output_path
+
     parser = _HtmlParser()
     parser.feed(html_text)
+    blocks = _merge_standalone_order_markers(parser.blocks)
 
     pdf = MeetingPDF()
     pdf.add_page()
 
-    for block in parser.blocks:
+    for block in blocks:
         indent = 5 if block.tag == "li" else 0
         _render_block(pdf, block, indent=indent)
 

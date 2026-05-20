@@ -144,18 +144,23 @@ onBeforeUnmount(() => {
 .meeting-editor {
   border: 1.5px solid var(--gray-200);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
 }
 
 .editor-toolbar {
+  position: sticky;
+  top: var(--nav-height);
+  z-index: calc(var(--z-sticky) - 1);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 1px;
   padding: 4px 6px;
   border-bottom: 1px solid var(--gray-200);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--gray-50);
+  box-shadow: 0 1px 0 rgba(226, 232, 240, 0.9);
   user-select: none;
 }
 
