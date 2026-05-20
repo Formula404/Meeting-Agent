@@ -84,7 +84,7 @@
               </svg>
             </div>
             <div class="upload-zone-text">拖拽或点击选择录音文件</div>
-            <div class="upload-zone-hint">支持 wav/mp3/m4a/flac 等常见音频格式，≤5MB</div>
+            <div class="upload-zone-hint">支持 wav/mp3/m4a/flac 等常见音频格式，≤100MB</div>
             <input
               ref="fileInput"
               type="file"

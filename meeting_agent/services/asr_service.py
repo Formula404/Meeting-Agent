@@ -179,3 +179,25 @@ def get_transcribed_text_from_url(audio_url: str) -> str:
     """
     task_id = create_rec_task_from_url(audio_url)
     return wait_for_result(task_id)
+
+
+def get_transcribed_text_via_proxy(audio_path: Path) -> str:
+    """完整流程：上传文件到 tflink 中转 → URL 提交 ASR → 等待结果 → 返回转写文本。
+
+    通过 tflink 匿名上传获取公网 URL，再使用腾讯云 ASR URL 拉取模式识别，
+    绕过 ASR 直传 5MB 限制。支持最大 100MB 的音频文件。
+
+    Args:
+        audio_path: 音频文件路径。
+
+    Returns:
+        语音转写文本。
+    """
+    from meeting_agent.services.tflink_service import upload_to_tflink
+
+    print(f"[tflink] 上传文件 {audio_path.name} 到 tflink...")
+    audio_url = upload_to_tflink(audio_path)
+    print(f"[tflink] 获取到下载链接: {audio_url}")
+
+    task_id = create_rec_task_from_url(audio_url)
+    return wait_for_result(task_id)

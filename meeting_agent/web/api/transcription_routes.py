@@ -19,7 +19,7 @@ from meeting_agent.transcription.docx_export import export_to_docx
 from meeting_agent.transcription.pdf_export import export_to_pdf, export_to_pdf_from_html
 from meeting_agent.services.asr_service import (
     SUPPORTED_AUDIO_EXTENSIONS,
-    get_transcribed_text,
+    get_transcribed_text_via_proxy,
     get_transcribed_text_from_url,
 )
 from meeting_agent.web.auth import get_current_user
@@ -63,13 +63,16 @@ async def transcribe(
 ) -> Dict[str, Any]:
     """上传录音文件，经过 ASR 语音识别 → 生成会议纪要草稿。
 
+    文件先匿名上传到 tflink 中转获取公网 URL，再提交腾讯云 ASR URL 拉取模式识别，
+    绕过了 ASR 直传 5MB 限制，最大支持 100MB 的音频文件。
+
     可附带会议基本信息（名称、时间、地点等），辅助 LLM 生成更准确的纪要。
 
     阶段一：仅生成会议纪要文本，不提取结构化字段。
     用户审阅编辑后可调用 /parse 接口进行结构化解析。
 
     Args:
-        file: 录音文件（支持 wav/mp3/m4a 等常见音频格式，≤5MB）。
+        file: 录音文件（支持 wav/mp3/m4a 等常见音频格式，≤100MB）。
         meeting_name: 会议名称。
         meeting_time: 会议时间。
         meeting_location: 会议地点。
@@ -94,9 +97,9 @@ async def transcribe(
     with audio_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Step 1: ASR 语音识别
+    # Step 1: ASR 语音识别（经 tflink 中转，无 5MB 限制）
     try:
-        transcribed_text = get_transcribed_text(audio_path)
+        transcribed_text = get_transcribed_text_via_proxy(audio_path)
     except Exception as e:
         raise HTTPException(500, f"语音识别失败: {e}") from e
 
