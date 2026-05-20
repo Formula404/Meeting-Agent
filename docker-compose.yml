@@ -18,6 +18,8 @@ services:
       WECOM_CORP_SECRET: ${WECOM_CORP_SECRET}
       WECOM_AGENT_ID: ${WECOM_AGENT_ID}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      TENCENT_SECRET_ID: ${TENCENT_SECRET_ID}
+      TENCENT_SECRET_KEY: ${TENCENT_SECRET_KEY}
     volumes:
       # Uploaded files (docx, pdf) — still on disk, not in DB
       - ./data:/app/data
