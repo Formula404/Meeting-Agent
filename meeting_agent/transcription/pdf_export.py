@@ -29,6 +29,13 @@ def _find_cjk_font_pair() -> tuple[str, str]:
         ("/System/Library/Fonts/PingFang.ttc", None),
         ("/System/Library/Fonts/STHeiti Light.ttc", None),
         ("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", None),
+        ("/usr/share/fonts/truetype/arphic/uming.ttc", None),
+        ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", None),
+        ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", None),
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
+        ("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+         "/usr/share/fonts/opentype/noto/NotoSerifCJK-Bold.ttc"),
         ("/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
          "/usr/share/fonts/noto/NotoSansCJK-Bold.ttc"),
     ]
@@ -101,6 +108,8 @@ class _Block:
         self.align = align
         self.runs: list[_TextRun] = []
         self.children: list["_Block"] = []  # for list items
+        self.list_type: str | None = None  # "ul" or "ol"
+        self.list_index: int = 1
 
 
 def _collapse_html_whitespace(text: str) -> str:
@@ -219,102 +228,6 @@ class _HtmlParser(HTMLParser):
                 )
 
 
-def _render_block_legacy(pdf: MeetingPDF, block: _Block, indent: int = 0):
-    """渲染一个块级元素到 PDF。"""
-    # Set font size based on tag
-    if block.tag == "h1":
-        font_size = 16
-        line_h = 8
-        bold = True
-    elif block.tag == "h2":
-        font_size = 14
-        line_h = 7
-        bold = True
-    elif block.tag == "h3":
-        font_size = 12
-        line_h = 6.5
-        bold = True
-    elif block.tag == "li":
-        font_size = 11
-        line_h = 6.5
-        bold = False
-    else:
-        font_size = 11
-        line_h = 6.5
-        bold = False
-
-    align = block.align
-
-    if block.tag == "hr":
-        if pdf.get_y() + 8 > pdf.page_break_trigger:
-            pdf.add_page()
-        pdf.set_x(pdf.l_margin)
-        pdf.set_draw_color(200, 200, 200)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-        pdf.ln(6)
-        return
-
-    # Build text segments for this block
-    segments = []
-    has_bold = bold
-    has_italic = False
-    has_underline = False
-    for run in block.runs:
-        style_parts = []
-        if run.bold or bold:
-            style_parts.append("B")
-            has_bold = True
-        if run.italic:
-            style_parts.append("I")
-            has_italic = True
-        if run.underline:
-            style_parts.append("U")
-            has_underline = True
-        style = "".join(style_parts)
-        segments.append((run.text, style))
-
-    if not segments:
-        if pdf.get_y() + line_h > pdf.page_break_trigger:
-            pdf.add_page()
-        pdf.ln(line_h * 0.6)
-        return
-
-    # For list items, add bullet/number prefix as first segment
-    if block.tag == "li":
-        prefix = ""
-        if getattr(block, "list_type", None) == "ol":
-            prefix = f"{getattr(block, 'list_index', 1)}. "
-        else:
-            prefix = "• "
-        if segments:
-            segments[0] = (prefix + segments[0][0], segments[0][1])
-        else:
-            segments.insert(0, (prefix, "B"))
-
-    left_x = pdf.l_margin + indent
-    avail_w = pdf.epw - indent
-    pdf.set_x(left_x)
-
-    full_text = _collapse_html_whitespace("".join(t for t, _ in segments))
-    if not full_text:
-        if pdf.get_y() + line_h > pdf.page_break_trigger:
-            pdf.add_page()
-        pdf.ln(line_h * 0.6)
-        return
-    style = ""
-    if has_bold:
-        style += "B"
-    if has_italic:
-        style += "I"
-    if has_underline:
-        style += "U"
-
-    if pdf.get_y() + line_h > pdf.page_break_trigger:
-        pdf.add_page()
-    pdf.set_font("CJK", style, font_size)
-    pdf.set_x(left_x)
-    pdf.multi_cell(avail_w, line_h, full_text, align=align)
-    pdf.ln(line_h * 0.15)
 
 
 def _wrap_pdf_text(pdf: MeetingPDF, text: str, max_width: float) -> list[str]:
@@ -334,29 +247,6 @@ def _wrap_pdf_text(pdf: MeetingPDF, text: str, max_width: float) -> list[str]:
 
 def _block_text(block: _Block) -> str:
     return _collapse_html_whitespace("".join(run.text for run in block.runs))
-
-
-def _merge_standalone_order_markers(blocks: list[_Block]) -> list[_Block]:
-    merged: list[_Block] = []
-    i = 0
-    marker_re = re.compile(r"^\d+\s*[.)．、]$")
-    while i < len(blocks):
-        block = blocks[i]
-        text = _block_text(block)
-        if (
-            block.tag != "li"
-            and marker_re.match(text)
-            and i + 1 < len(blocks)
-            and blocks[i + 1].tag not in ("hr", "li")
-        ):
-            next_block = blocks[i + 1]
-            next_block.runs.insert(0, _TextRun(f"{text} "))
-            merged.append(next_block)
-            i += 2
-            continue
-        merged.append(block)
-        i += 1
-    return merged
 
 
 def _merge_standalone_order_markers(blocks: list[_Block]) -> list[_Block]:
@@ -452,7 +342,7 @@ def _build_print_html(html_text: str) -> str:
       padding: 0;
       background: #fff;
       color: #111827;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "Noto Sans SC", "PingFang SC", sans-serif;
+      font-family: "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 12pt;
       line-height: 1.65;
     }}
@@ -657,8 +547,8 @@ def _render_block(pdf: MeetingPDF, block: _Block, indent: int = 0):
     align = block.align
 
     if block.tag == "li":
-        if getattr(block, "list_type", None) == "ol":
-            prefix = f"{getattr(block, 'list_index', 1)}."
+        if block.list_type == "ol":
+            prefix = f"{block.list_index}."
         else:
             prefix = "-"
         prefix_w = max(8, pdf.get_string_width(prefix) + 3)

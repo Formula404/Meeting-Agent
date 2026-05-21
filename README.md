@@ -167,7 +167,7 @@ uv run gunicorn meeting_agent.web.run:app \
 server {
     listen 80;
     server_name your-domain.com;
-    client_max_body_size 50M;
+    client_max_body_size 110M;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
