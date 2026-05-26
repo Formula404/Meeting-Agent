@@ -78,7 +78,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ═══════════════════════════════════════════════════════════════════════
 
 @router.post("/extract")
-async def extract(
+def extract(
     file: UploadFile = File(...),
     pdf_file: Optional[UploadFile] = File(None),
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -133,7 +133,7 @@ class ExtractFromTextBody(BaseModel):
 
 
 @router.post("/extract-from-text")
-async def extract_from_text(
+def extract_from_text(
     body: ExtractFromTextBody,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:

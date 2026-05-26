@@ -50,7 +50,7 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/transcribe")
-async def transcribe(
+def transcribe(
     file: UploadFile = File(...),
     meeting_name: str = Form(""),
     meeting_time: str = Form(""),
@@ -163,7 +163,7 @@ class TranscribeUrlBody(BaseModel):
 
 
 @router.post("/transcribe/url")
-async def transcribe_from_url(
+def transcribe_from_url(
     body: TranscribeUrlBody,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:

@@ -29,4 +29,4 @@ COPY meeting_agent/ /app/meeting_agent/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "meeting_agent.web.run:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "meeting_agent.web.run:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

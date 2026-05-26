@@ -8,8 +8,8 @@ from psycopg2 import pool as pg_pool
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-_MIN_CONN = 2
-_MAX_CONN = 10
+_MIN_CONN = 1
+_MAX_CONN = 5
 
 _pool: Optional[pg_pool.ThreadedConnectionPool] = None
 
