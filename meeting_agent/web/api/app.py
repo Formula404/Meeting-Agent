@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import uuid
@@ -10,7 +9,6 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
-from meeting_agent.schemas import MeetingOutput
 from meeting_agent.services.file_service import send_file_from_result
 from meeting_agent.services.message_service import send_meeting_summary_from_result
 from meeting_agent.services.schedule_service import create_meeting_schedules_from_result
@@ -24,8 +22,8 @@ from meeting_agent.web.auth import (
 from meeting_agent.web.converter import convert_result_for_push
 from meeting_agent.web.database import init_db
 from meeting_agent.web.models import (
+    create_background_task,
     create_department,
-    create_result,
     create_user,
     create_web_user,
     delete_department,
@@ -33,8 +31,8 @@ from meeting_agent.web.models import (
     delete_session,
     delete_user,
     delete_web_user,
+    get_background_task,
     get_result,
-    get_web_user_by_id,
     get_web_user_by_username,
     list_departments,
     list_results,
@@ -46,7 +44,6 @@ from meeting_agent.web.models import (
     update_result,
     update_user,
 )
-from meeting_agent.workflow import run_meeting_extraction, run_meeting_extraction_from_text
 
 # Ensure DB schema on import
 init_db()
@@ -83,12 +80,13 @@ def extract(
     pdf_file: Optional[UploadFile] = File(None),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """Upload a .docx file (and optional .pdf), run LLM extraction, return the result."""
+    """Upload a .docx file, enqueue extraction, and return a task id quickly."""
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(400, "仅支持 .docx 文件")
 
     # Save uploaded docx
-    input_path = INPUT_DIR / file.filename
+    stored_filename = f"{uuid.uuid4().hex}_{file.filename}"
+    input_path = INPUT_DIR / stored_filename
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -103,26 +101,20 @@ def extract(
         with pdf_path.open("wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
 
-    # Run extraction pipeline
-    try:
-        meeting: MeetingOutput = run_meeting_extraction(input_path)
-        result_data = meeting.model_dump(mode="json")
-    except Exception as e:
-        raise HTTPException(500, f"LLM 提取失败: {e}") from e
-
-    # Persist result with owner
-    record = create_result(
-        original_filename=file.filename,
-        result_data=result_data,
-        pdf_filename=pdf_filename,
+    task = create_background_task(
+        "extract_docx",
+        {
+            "input_path": str(input_path),
+            "original_filename": file.filename,
+            "pdf_filename": pdf_filename,
+        },
         web_user_id=current_user["id"],
     )
     return {
-        "id": record["id"],
-        "original_filename": record["original_filename"],
+        "task_id": task["id"],
+        "status": task["status"],
+        "original_filename": file.filename,
         "pdf_filename": pdf_filename,
-        "created_at": record["created_at"],
-        "result": result_data,
     }
 
 
@@ -137,7 +129,7 @@ def extract_from_text(
     body: ExtractFromTextBody,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """接受会议纪要文本，直接运行 LLM 提取结构化数据，结果存入 extraction_results 表。
+    """接受会议纪要文本，创建后台任务提取结构化数据。
 
     用于录音转录流程：用户编辑完会议纪要后点击"解析"，将文本传入此接口，
     与 .docx 上传流程共用同一套 LLM 解析逻辑和同一张结果表。
@@ -146,27 +138,46 @@ def extract_from_text(
     if not meeting_text:
         raise HTTPException(400, "会议纪要内容为空")
 
-    # 使用与 .docx 上传相同的 LLM 提取逻辑
-    try:
-        meeting: MeetingOutput = run_meeting_extraction_from_text(meeting_text)
-        result_data = meeting.model_dump(mode="json")
-    except Exception as e:
-        raise HTTPException(500, f"LLM 提取失败: {e}") from e
-
-    # 持久化到 extraction_results 表（与 .docx 上传共用）
     filename = body.original_filename.strip() or "录音转文字_解析结果"
-    record = create_result(
-        original_filename=filename,
-        result_data=result_data,
-        pdf_filename=body.pdf_filename,
+    task = create_background_task(
+        "extract_text",
+        {
+            "meeting_text": meeting_text,
+            "original_filename": filename,
+            "pdf_filename": body.pdf_filename,
+        },
         web_user_id=current_user["id"],
     )
     return {
-        "id": record["id"],
-        "original_filename": record["original_filename"],
+        "task_id": task["id"],
+        "status": task["status"],
+        "original_filename": filename,
         "pdf_filename": body.pdf_filename,
-        "created_at": record["created_at"],
-        "result": result_data,
+    }
+
+
+@router.get("/tasks/{task_id}")
+def get_task_status(
+    task_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return background task status for frontend polling."""
+    task = get_background_task(task_id)
+    if not task:
+        raise HTTPException(404, "任务不存在")
+    if current_user.get("role") != "admin" and task.get("web_user_id") != current_user["id"]:
+        raise HTTPException(403, "无权访问此任务")
+    return {
+        "task_id": task["id"],
+        "task_type": task["task_type"],
+        "status": task["status"],
+        "result_type": task.get("result_type") or "",
+        "result_id": task.get("result_id") or "",
+        "error": task.get("error") or "",
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "started_at": task.get("started_at"),
+        "finished_at": task.get("finished_at"),
     }
 
 

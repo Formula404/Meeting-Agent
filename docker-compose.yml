@@ -24,3 +24,23 @@ services:
       # Uploaded files (docx, pdf) — still on disk, not in DB
       - ./data:/app/data
     restart: unless-stopped
+
+  meeting-agent-worker:
+    build: .
+    container_name: meeting-agent-worker
+    command: [ "python", "-m", "meeting_agent.worker" ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql://meeting:${POSTGRES_PASSWORD}@host.docker.internal:5432/meeting_agent
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      MODEL_NAME: ${MODEL_NAME}
+      TEMPERATURE: ${TEMPERATURE}
+      TENCENT_SECRET_ID: ${TENCENT_SECRET_ID}
+      TENCENT_SECRET_KEY: ${TENCENT_SECRET_KEY}
+      EXTRACT_WORKER_CONCURRENCY: 2
+      TRANSCRIBE_WORKER_CONCURRENCY: 2
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

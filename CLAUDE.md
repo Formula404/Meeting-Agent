@@ -14,6 +14,9 @@ uv run python main.py data/input/<meeting-file>.docx
 # Web UI: Start backend API server (port 8000, reload enabled)
 uv run python -m meeting_agent.web.run
 
+# Web UI: Start background task worker (polls DB for pending tasks)
+uv run python -m meeting_agent.worker
+
 # Web UI: Start frontend dev server (port 5173, proxies /api -> :8000)
 cd frontend && npm run dev
 ```
@@ -29,6 +32,7 @@ Test inputs go in `data/input/` (`自动发送测试会议.docx` is the latest t
 | Package | Module | Responsibility |
 |---------|--------|---------------|
 | **root** | `workflow.py` | Orchestrates extraction pipeline (both .docx and text inputs) |
+| | `worker.py` | Background task worker: polls `background_tasks` table, dispatches ASR/LLM tasks to thread pool |
 | | `document_loader.py` | Reads .docx paragraphs + tables → plain text with `\|` separators |
 | | `llm.py` | Creates ChatOpenAI instance from `.env` config (model, base URL, key, temperature) |
 | | `prompts.py` | System prompt + user prompt template (JSON output format) |
@@ -51,9 +55,9 @@ Test inputs go in `data/input/` (`自动发送测试会议.docx` is the latest t
 | **web/** | `run.py` | FastAPI app creation, CORS (→localhost:5173), static files mount, SPA catch-all |
 | | `auth.py` | PBKDF2-HMAC-SHA256 (600K iterations, 32-byte salt), `get_current_user`/`require_admin` FastAPI dependencies |
 | | `database.py` | psycopg2 `ThreadedConnectionPool` (min 2, max 10), `_PoolConnectionWrapper` returns connections on close, auto-migration via `information_schema` column checks |
-| | `models.py` | CRUD for users, departments, web_users, sessions, extraction_results, transcription_results |
+| | `models.py` | CRUD for users, departments, web_users, sessions, extraction_results, transcription_results, background_tasks |
 | | `converter.py` | Name→userid / dept name→dept_id / date string→Unix timestamp conversion for push |
-| | `api/app.py` | Main routes: extract, extract-from-text, results CRUD, push, auth, users/depts/web-users CRUD |
+| | `api/app.py` | Main routes: extract, extract-from-text, tasks CRUD, results CRUD, push, auth, users/depts/web-users CRUD |
 | | `api/transcription_routes.py` | Transcription routes: upload (file/URL), results CRUD, parse, push, export (.docx/PDF) |
 | **frontend/** | Vue 3 SPA | Views: UploadView, ReviewView, TranscribeView, AdminView, LoginView, RegisterView. Components: MeetingEditor (Tiptap), ScheduleEditor, TagInput. |
 
@@ -63,6 +67,8 @@ Test inputs go in `data/input/` (`自动发送测试会议.docx` is the latest t
 
 ```
 main.py (CLI) or POST /api/extract or POST /api/extract-from-text
+  → create_background_task()                # Enqueue task in DB, return task_id immediately
+  → Worker picks up: claim_next_background_task()
   → workflow.run_meeting_extraction() / run_meeting_extraction_from_text()
       → document_loader.load_docx_text()    # Parse .docx paragraphs + tables → plain text
       → llm.get_llm()                       # Init ChatOpenAI from config
@@ -71,28 +77,28 @@ main.py (CLI) or POST /api/extract or POST /api/extract-from-text
       → extract_json_from_text()            # Regex to strip ```json``` and extract {...}
       → schemas.MeetingOutput.validate()    # Pydantic parse & validate
       → save to data/output/*_result.json   # CLI only; Web saves to DB
+      → complete_background_task()          # Mark task success with result_id
+  → Frontend polling GET /api/tasks/{task_id} until status='success'
 ```
 
 #### Transcription (two-phase)
 
 ```
-Phase 1 — Generate draft:
-  POST /api/transcribe (file upload, ≤100MB via tflink proxy)
-    → tflink_service.upload_to_tflink()     # Anonymous upload → public download URL
-    → asr_service.get_transcribed_text_via_proxy(audio_path)
+Phase 1 — Generate draft (async via worker):
+  POST /api/transcribe (file upload, ≤100MB via tflink proxy)  or  POST /api/transcribe/url
+    → create_background_task()              # Enqueue task (transcribe_file / transcribe_url)
+    → return { task_id } to frontend immediately
+    → Worker picks up: claim_next_background_task()
+    → tflink_service.upload_to_tflink()     # Anonymous upload → public download URL (file mode only)
+    → asr_service.get_transcribed_text_via_proxy() or get_transcribed_text_from_url()
         → create_rec_task_from_url(url)     # Tencent Cloud ASR URL-pull mode
         → poll DescribeTaskStatus until done or timeout (30 min max)
     → transcription/workflow.run_transcription_extraction()
         → LLM generates plain-text meeting draft (no JSON structure)
         → Uses meeting basic info (name, time, location, chair, attendees) to improve accuracy
     → save to transcription_results table
-
-  POST /api/transcribe/url (URL input, no size limit)
-    → asr_service.get_transcribed_text_from_url(audio_url)
-        → create_rec_task_from_url(url)     # Same URL-pull mode
-        → poll for result
-    → Same LLM draft generation as above
-    → save to transcription_results table
+    → complete_background_task()            # Mark task success with result_id
+  → Frontend polling GET /api/tasks/{task_id} until status='success'
 
 Phase 2 — Parse into tasks (after user edits):
   POST /api/transcribe/{id}/parse
@@ -124,6 +130,7 @@ All tables created/auto-migrated in `web/database.py:init_db()` via `information
 - **departments**: `id SERIAL PK`, `name TEXT UNIQUE` (部门名称), `dept_id INT UNIQUE` (企微部门ID), `parent_dept_id INT FK→departments(dept_id) ON DELETE SET NULL`, `created_at`, `updated_at`
 - **extraction_results**: `id TEXT PK` (UUID), `original_filename TEXT`, `pdf_filename TEXT`, `web_user_id INT FK→web_users(id) ON DELETE SET NULL`, `status TEXT CHECK(IN ('draft','pushed'))`, `result_json TEXT`, `created_at`, `updated_at`, `pushed_at`
 - **transcription_results**: Same structure as extraction_results, plus `user_prompt TEXT`
+- **background_tasks**: `id TEXT PK` (UUID), `task_type TEXT CHECK(extract_docx|extract_text|transcribe_file|transcribe_url)`, `status TEXT CHECK(pending|running|success|failed)`, `web_user_id INT FK→web_users(id)`, `payload_json TEXT`, `result_type TEXT`, `result_id TEXT`, `error TEXT`, `started_at`, `finished_at`, `created_at`, `updated_at`. Indexed on `(status, task_type, created_at)` for worker polling.
 
 ### Key Patterns
 
@@ -183,3 +190,11 @@ All tables created/auto-migrated in `web/database.py:init_db()` via `information
 - Proxy `/api` → `http://localhost:8000` in dev mode (configured in vite config)
 - `frontend/dist/` is served by FastAPI in production
 - Views: Upload (docx/audio/URL), Review (Tiptap editor + Schedule editor), Transcribe (two-phase flow), Admin (CRUD), Login, Register
+
+#### Background Task Worker
+- **Worker entry**: `meeting_agent/worker.py:main()` — initializes DB, resets stuck tasks, spawns 2 scheduler loops (extract + transcribe) in a `ThreadPoolExecutor`
+- **Extract loop**: claims `extract_docx` / `extract_text` tasks, concurrency controlled by `EXTRACT_WORKER_CONCURRENCY` (default 2)
+- **Transcribe loop**: claims `transcribe_file` / `transcribe_url` tasks, concurrency controlled by `TRANSCRIBE_WORKER_CONCURRENCY` (default 2)
+- **Polling**: `claim_next_background_task()` uses `SELECT ... FOR UPDATE SKIP LOCKED` to safely claim tasks across multiple worker instances
+- **Task lifecycle**: `pending → running → success/failed`. On startup, `reset_running_background_tasks()` resets any stale `running` tasks back to `pending`
+- **Frontend polling**: Both `UploadView.vue` and `TranscribeView.vue` poll `GET /api/tasks/{task_id}` every 3s, with a 30-min timeout. Shows user-friendly status messages ("任务排队中...", "后台正在识别并生成会议纪要...")

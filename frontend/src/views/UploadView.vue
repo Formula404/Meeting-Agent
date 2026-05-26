@@ -179,7 +179,7 @@
           <div class="spinner-dot"></div>
           <div class="spinner-dot"></div>
         </div>
-        <div class="extracting-title">AI 正在解析中...</div>
+        <div class="extracting-title">{{ taskMessage || 'AI 正在解析中...' }}</div>
         <div class="extracting-file">{{ selectedFile?.name }}</div>
       </div>
     </div>
@@ -347,6 +347,7 @@ const draggingPdf = ref(false)
 const uploading = ref(false)
 const error = ref('')
 const resultId = ref(null)
+const taskMessage = ref('')
 const selectedFile = ref(null)
 const pdfFile = ref(null)
 const recentList = ref([])
@@ -481,20 +482,40 @@ async function startExtract() {
   uploading.value = true
   error.value = ''
   resultId.value = null
+  taskMessage.value = '文件已上传，等待后台解析...'
   try {
     const data = await api.uploadFile(selectedFile.value, pdfFile.value)
-    resultId.value = data.id
+    const task = await waitForTask(data.task_id)
+    resultId.value = task.result_id
     selectedFile.value = null
     pdfFile.value = null
     recentList.value = await api.listResults()
     resultPage.value = 1
     // Auto-navigate to review page
-    router.push({ name: 'review', params: { id: data.id } })
+    router.push({ name: 'review', params: { id: task.result_id } })
   } catch (e) {
     error.value = e.message
   } finally {
     uploading.value = false
+    taskMessage.value = ''
   }
+}
+
+async function waitForTask(taskId) {
+  if (!taskId) throw new Error('后台任务创建失败')
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < 30 * 60 * 1000) {
+    const task = await api.getTask(taskId)
+    if (task.status === 'success') return task
+    if (task.status === 'failed') throw new Error(task.error || '后台解析失败')
+    taskMessage.value = task.status === 'running' ? '后台正在解析会议纪要...' : '任务排队中...'
+    await sleep(3000)
+  }
+  throw new Error('后台解析超时，请稍后在最近解析记录中查看结果')
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function handleDelete(record) {
