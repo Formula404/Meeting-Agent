@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import time
 from pathlib import Path
 from typing import Optional
@@ -12,6 +13,8 @@ from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentClo
 from tencentcloud.asr.v20190614 import asr_client, models
 
 from meeting_agent.config import get_settings
+
+perf_logger = logging.getLogger("perf")
 
 # 音频文件 5MB 上限（SourceType=1 直传数据限制）
 MAX_FILE_SIZE = 5 * 1024 * 1024
@@ -143,6 +146,7 @@ def wait_for_result(task_id: int) -> str:
             last_status = status
 
         if status == 2:
+            perf_logger.info("STAGE asr_polling task_id=%d cost=%.3fs", task_id, time.time() - start)
             return data.Result
         if status == 3:
             err_msg = data.ErrorMsg or "未知错误"
@@ -177,7 +181,9 @@ def get_transcribed_text_from_url(audio_url: str) -> str:
     Returns:
         语音转写文本。
     """
+    _start = time.perf_counter()
     task_id = create_rec_task_from_url(audio_url)
+    perf_logger.info("STAGE asr_create_task cost=%.3fs", time.perf_counter() - _start)
     return wait_for_result(task_id)
 
 
@@ -195,9 +201,14 @@ def get_transcribed_text_via_proxy(audio_path: Path) -> str:
     """
     from meeting_agent.services.tflink_service import upload_to_tflink
 
+    _start = time.perf_counter()
     print(f"[tflink] 上传文件 {audio_path.name} 到 tflink...")
     audio_url = upload_to_tflink(audio_path)
     print(f"[tflink] 获取到下载链接: {audio_url}")
+    perf_logger.info("STAGE tflink_upload cost=%.3fs", time.perf_counter() - _start)
 
+    _start = time.perf_counter()
     task_id = create_rec_task_from_url(audio_url)
+    perf_logger.info("STAGE asr_create_task cost=%.3fs", time.perf_counter() - _start)
+
     return wait_for_result(task_id)

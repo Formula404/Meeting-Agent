@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+
+perf_logger = logging.getLogger("perf")
+
+
+def log_stage(name: str, start: float) -> float:
+    """记录阶段耗时并返回新的起始时间。"""
+    cost = time.perf_counter() - start
+    perf_logger.info("STAGE %s cost=%.3fs", name, cost)
+    return time.perf_counter()
 
 from meeting_agent.transcription.workflow import (
     run_transcription_extraction,
@@ -91,17 +102,21 @@ def transcribe(
             f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
         )
 
+    _stage_start = time.perf_counter()
+
     # 保存音频文件
     audio_filename = f"{uuid.uuid4().hex}_{file.filename}"
     audio_path = ASR_AUDIO_DIR / audio_filename
     with audio_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
+    _stage_start = log_stage("save_audio", _stage_start)
 
     # Step 1: ASR 语音识别（经 tflink 中转，无 5MB 限制）
     try:
         transcribed_text = get_transcribed_text_via_proxy(audio_path)
     except Exception as e:
         raise HTTPException(500, f"语音识别失败: {e}") from e
+    _stage_start = log_stage("asr_total", _stage_start)
 
     if not transcribed_text.strip():
         raise HTTPException(500, "语音识别结果为空")
@@ -110,6 +125,7 @@ def transcribe(
     text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
     text_path = INPUT_DIR / text_filename
     text_path.write_text(transcribed_text, encoding="utf-8")
+    _stage_start = log_stage("save_text", _stage_start)
 
     # Step 2: LLM 生成会议纪要草稿
     try:
@@ -132,6 +148,7 @@ def transcribe(
             "push_user": [],
             "schedules": [],
         }
+    _stage_start = log_stage("llm_generate", _stage_start)
 
     # 持久化
     record = create_transcription_result(
@@ -140,6 +157,7 @@ def transcribe(
         user_prompt="",
         web_user_id=current_user["id"],
     )
+    log_stage("db_write", _stage_start)
 
     return {
         "id": record["id"],
@@ -188,11 +206,14 @@ def transcribe_from_url(
             f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
         )
 
+    _stage_start = time.perf_counter()
+
     # Step 1: ASR 语音识别（URL 拉取模式，无 5MB 限制）
     try:
         transcribed_text = get_transcribed_text_from_url(audio_url)
     except Exception as e:
         raise HTTPException(500, f"语音识别失败: {e}") from e
+    _stage_start = log_stage("asr_total", _stage_start)
 
     if not transcribed_text.strip():
         raise HTTPException(500, "语音识别结果为空")
@@ -201,6 +222,7 @@ def transcribe_from_url(
     text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
     text_path = INPUT_DIR / text_filename
     text_path.write_text(transcribed_text, encoding="utf-8")
+    _stage_start = log_stage("save_text", _stage_start)
 
     # Step 2: LLM 生成会议纪要草稿
     try:
@@ -222,6 +244,7 @@ def transcribe_from_url(
             "push_user": [],
             "schedules": [],
         }
+    _stage_start = log_stage("llm_generate", _stage_start)
 
     # 持久化
     record = create_transcription_result(
@@ -230,6 +253,7 @@ def transcribe_from_url(
         user_prompt="",
         web_user_id=current_user["id"],
     )
+    log_stage("db_write", _stage_start)
 
     return {
         "id": record["id"],

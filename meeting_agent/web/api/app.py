@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+
+perf_logger = logging.getLogger("perf")
+
+
+def log_stage(name: str, start: float) -> float:
+    """记录阶段耗时并返回新的起始时间。"""
+    cost = time.perf_counter() - start
+    perf_logger.info("STAGE %s cost=%.3fs", name, cost)
+    return time.perf_counter()
 
 from meeting_agent.schemas import MeetingOutput
 from meeting_agent.services.file_service import send_file_from_result
@@ -84,6 +95,7 @@ def extract(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Upload a .docx file (and optional .pdf), run LLM extraction, return the result."""
+    _stage_start = time.perf_counter()
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(400, "仅支持 .docx 文件")
 
@@ -91,6 +103,7 @@ def extract(
     input_path = INPUT_DIR / file.filename
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
+    _stage_start = log_stage("save_file", _stage_start)
 
     # Save optional PDF
     pdf_filename = ""
@@ -102,6 +115,7 @@ def extract(
         pdf_path = PDF_DIR / pdf_filename
         with pdf_path.open("wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
+    _stage_start = log_stage("save_pdf", _stage_start)
 
     # Run extraction pipeline
     try:
@@ -109,6 +123,7 @@ def extract(
         result_data = meeting.model_dump(mode="json")
     except Exception as e:
         raise HTTPException(500, f"LLM 提取失败: {e}") from e
+    _stage_start = log_stage("llm_extract", _stage_start)
 
     # Persist result with owner
     record = create_result(
@@ -117,6 +132,7 @@ def extract(
         pdf_filename=pdf_filename,
         web_user_id=current_user["id"],
     )
+    log_stage("db_write", _stage_start)
     return {
         "id": record["id"],
         "original_filename": record["original_filename"],
