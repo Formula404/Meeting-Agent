@@ -13,6 +13,7 @@
 - **用户认证系统** — Web UI 注册登录，PBKDF2-HMAC-SHA256 密码哈希，admin/user 角色权限管理，多用户数据隔离
 - **企业微信推送** — 一键推送会议纪要消息（Markdown 自动分片）、批量创建日历日程、附件（PDF/docx）文件推送
 - **CLI / Web 双模式** — 既可命令行一键处理，也支持 Web 界面上传管理审阅
+- **后台任务队列** — 耗时操作（ASR 语音识别、LLM 提取）异步执行，API 秒级返回，Worker 进程独立轮询处理，前端实时轮询进度
 - **LLM 无关** — 兼容任意 OpenAI 格式的 API（DeepSeek、OpenAI、通义千问等），通过 .env 配置即可切换
 - **Docker 部署** — 多阶段构建（Node 编译前端 → Python 运行时），一键 docker compose up
 
@@ -104,7 +105,10 @@ uv run python main.py data/input/你的会议记录.docx
 # 终端 1：启动后端 API（开发模式，热重载）
 uv run python -m meeting_agent.web.run
 
-# 终端 2：启动前端开发服务器
+# 终端 2：启动后台任务 Worker（自动轮询 DB 执行任务）
+uv run python -m meeting_agent.worker
+
+# 终端 3：启动前端开发服务器
 cd frontend && npm run dev
 ```
 
@@ -113,7 +117,13 @@ cd frontend && npm run dev
 ## Web UI 流程
 
 ```
-上传 .docx / 录音  →  LLM 提取 / ASR 转写  →  在线审阅编辑（Tiptap 富文本） →  推送至企业微信 / 导出 PDF/DOCX
+上传 .docx / 录音  →  创建后台任务（秒级返回 task_id）  →  前端轮询 /api/tasks/{id}
+                                ↓
+                   Worker 异步执行：ASR / LLM 提取 / 生成纪要
+                                ↓
+                   PostgreSQL background_tasks 表记录状态 + result_id
+                                ↓
+                   在线审阅编辑（Tiptap 富文本） →  推送至企业微信 / 导出 PDF/DOCX
                                                            ↓
                                        姓名 → userid 映射（PostgreSQL 用户库）
                                        部门 → dept_id 映射（PostgreSQL 部门库）
@@ -124,28 +134,32 @@ cd frontend && npm run dev
 ### 主解析流程
 
 1. 在 Web UI 上传 .docx 文件（可选同时上传关联 PDF 附件）
-2. 后端调用 LLM 提取结构化数据（会议时间、推送部门/人员、日程安排、会议纪要）
-3. 进入审阅编辑页面，使用 Tiptap 富文本编辑器修改内容
-4. 确认无误后点击"推送" — 自动执行姓名↔userid、部门↔dept_id、日期↔时间戳的转换
-5. 企业微信推送：Markdown 消息通知（超长自动分片）+ 日历日程批量创建 + 附件文件（PDF优先/docx兜底）
+2. 后端创建后台任务，秒级返回 `task_id`；前端开始轮询 `/api/tasks/{task_id}` 获取进度
+3. Worker 进程异步执行 LLM 提取结构化数据（会议时间、推送部门/人员、日程安排、会议纪要）
+4. 提取完成后前端自动跳转到审阅编辑页面，使用 Tiptap 富文本编辑器修改内容
+5. 确认无误后点击"推送" — 自动执行姓名↔userid、部门↔dept_id、日期↔时间戳的转换
+6. 企业微信推送：Markdown 消息通知（超长自动分片）+ 日历日程批量创建 + 附件文件（PDF优先/docx兜底）
 
 ### 转录业务流程（两阶段）
 
 ```
-┌─ 阶段一 ──────────────────────────────────────┐
-│  上传录音文件（或提供音频 URL）                 │
-│    → tflink 中转（文件模式）→ 腾讯云 ASR 识别    │
-│      或 URL 直拉 → 腾讯云 ASR 识别              │
-│    → LLM 生成会议纪要草稿（附会议基本信息表单）   │
-│    → 用户在线编辑草稿                           │
-└──────────────────────┬────────────────────────┘
+┌─ 阶段一 ──────────────────────────────────────────┐
+│  上传录音文件（或提供音频 URL）                      │
+│    → 创建后台任务，秒级返回 task_id                  │
+│    → Worker 异步执行：                              │
+│       tflink 中转（文件模式）→ 腾讯云 ASR 识别        │
+│       或 URL 直拉 → 腾讯云 ASR 识别                  │
+│    → LLM 生成会议纪要草稿（附会议基本信息表单）        │
+│    → 前端轮询到完成 → 自动跳转编辑页                  │
+│    → 用户在线编辑草稿                               │
+└──────────────────────┬────────────────────────────┘
                         ↓
-┌─ 阶段二 ──────────────────────────────────────┐
-│  编辑完成 → 提交解析                           │
-│    → LLM 按部门/中心分解工作任务及日程             │
-│    → 提取推送对象和日程安排                      │
-│    → 推送企业微信 / 导出 PDF/DOCX 存档           │
-└────────────────────────────────────────────────┘
+┌─ 阶段二 ──────────────────────────────────────────┐
+│  编辑完成 → 提交解析                               │
+│    → LLM 按部门/中心分解工作任务及日程                │
+│    → 提取推送对象和日程安排                          │
+│    → 推送企业微信 / 导出 PDF/DOCX 存档               │
+└────────────────────────────────────────────────────┘
 ```
 
 ## API 接口
@@ -165,8 +179,8 @@ cd frontend && npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/extract` | 上传 .docx（可选 PDF 附件）并执行 LLM 提取 |
-| `POST` | `/api/extract-from-text` | 直接传入会议纪要文本执行 LLM 提取（用于转录流程） |
+| `POST` | `/api/extract` | 上传 .docx（可选 PDF 附件），创建后台提取任务 |
+| `POST` | `/api/extract-from-text` | 传入会议纪要文本，创建后台提取任务（用于转录流程） |
 | `GET` | `/api/results` | 获取所有解析记录列表（admin 全部，用户只看自己） |
 | `GET` | `/api/results/{id}` | 获取单条解析完整数据 |
 | `PUT` | `/api/results/{id}` | 更新解析结果（审阅编辑） |
@@ -178,8 +192,8 @@ cd frontend && npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/transcribe` | 上传录音文件（经 tflink 中转，≤100MB），ASR + 生成纪要草稿 |
-| `POST` | `/api/transcribe/url` | 通过音频 URL 转写（无大小限制，腾讯云 URL 拉取最大 5GB） |
+| `POST` | `/api/transcribe` | 上传录音文件，创建后台 ASR+LLM 任务（经 tflink 中转，≤100MB） |
+| `POST` | `/api/transcribe/url` | 通过音频 URL 创建后台 ASR+LLM 任务（无大小限制，URL 拉取最大 5GB） |
 | `GET` | `/api/transcribe/results` | 获取转写记录列表 |
 | `GET` | `/api/transcribe/results/{id}` | 获取单条转写数据 |
 | `PUT` | `/api/transcribe/results/{id}` | 更新转写结果 |
@@ -189,6 +203,12 @@ cd frontend && npm run dev
 | `POST` | `/api/transcribe/results/{id}/export-docx` | 导出为 .docx 文件 |
 | `POST` | `/api/transcribe/results/{id}/generate-pdf` | 生成 PDF 文件 |
 | `GET` | `/api/transcribe/results/{id}/download-pdf` | 下载生成的 PDF |
+
+### 后台任务
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/tasks/{task_id}` | 查询后台任务状态（前端轮询用），返回 status/result_id/error |
 
 ### 用户与部门管理
 
@@ -224,6 +244,8 @@ docker compose logs -f meeting-agent
 > - Docker 容器通过 `host.docker.internal` 访问宿主机数据库
 > - 上传的文件（.docx / PDF / 录音）保存在 `./data/` 卷挂载目录
 > - 容器内预装 Chromium + Noto Sans CJK 中文字体，支持 PDF 浏览器打印
+> - `meeting-agent-worker` 容器独立运行，自动轮询 `background_tasks` 表异步执行耗时任务
+> - 可通过 `EXTRACT_WORKER_CONCURRENCY` 和 `TRANSCRIBE_WORKER_CONCURRENCY` 环境变量控制提取/转写的并行任务数（默认均为 2）
 
 ### 手动部署（生产环境）
 
@@ -281,6 +303,7 @@ meeting-agent/
 │
 ├── meeting_agent/
 │   ├── workflow.py                        # 主解析流水线编排（.docx / 文本）
+│   ├── worker.py                          # 后台任务 Worker：轮询 DB 异步执行耗时任务
 │   ├── document_loader.py                 # .docx 解析（段落 + 表格 → 纯文本）
 │   ├── prompts.py                         # LLM 提示词（系统 + 用户模板）
 │   ├── schemas.py                         # Pydantic 数据模型（MeetingOutput）

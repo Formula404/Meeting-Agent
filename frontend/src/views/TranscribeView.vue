@@ -215,7 +215,7 @@
           <div class="spinner-dot"></div>
           <div class="spinner-dot"></div>
         </div>
-        <div class="extracting-title">腾讯云 ASR 语音识别中...</div>
+        <div class="extracting-title">{{ taskMessage || '腾讯云 ASR 语音识别中...' }}</div>
         <div class="extracting-file">{{ displayFileName }}</div>
         <div class="extracting-desc">音频时长越长等待越久，请耐心等候</div>
       </div>
@@ -437,6 +437,7 @@ const processing = ref(false)
 const error = ref('')
 const flash = ref('')
 const flashType = ref('flash-info')
+const taskMessage = ref('')
 
 // Result state
 const resultId = ref(null)
@@ -560,6 +561,7 @@ async function startTranscribe() {
   if (!canTranscribe.value) return
   processing.value = true
   error.value = ''
+  taskMessage.value = '文件已提交，等待后台识别...'
 
   const metadata = {
     meeting_name: meetingForm.name,
@@ -582,18 +584,38 @@ async function startTranscribe() {
       if (!selectedFile.value) return
       data = await api.transcribeFile(selectedFile.value, metadata)
     }
-    resultId.value = data.id
-    resultFilename.value = data.original_filename
+    const task = await waitForTask(data.task_id)
+    const record = await api.getTranscription(task.result_id)
+    resultId.value = record.id
+    resultFilename.value = record.original_filename
     resultStatus.value = 'draft'
-    resultData.value = normalizeSchedules(data.result)
-    parsed.value = data.result._parsed === true
+    resultData.value = normalizeSchedules(record.result_json)
+    parsed.value = record.result_json._parsed === true
     // Auto navigate to edit mode
-    router.replace({ name: 'transcribe-edit', params: { id: data.id } })
+    router.replace({ name: 'transcribe-edit', params: { id: record.id } })
   } catch (e) {
     error.value = `识别失败: ${e.message}`
   } finally {
     processing.value = false
+    taskMessage.value = ''
   }
+}
+
+async function waitForTask(taskId) {
+  if (!taskId) throw new Error('后台任务创建失败')
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < 30 * 60 * 1000) {
+    const task = await api.getTask(taskId)
+    if (task.status === 'success') return task
+    if (task.status === 'failed') throw new Error(task.error || '后台识别失败')
+    taskMessage.value = task.status === 'running' ? '后台正在识别并生成会议纪要...' : '任务排队中...'
+    await sleep(3000)
+  }
+  throw new Error('后台识别超时，请稍后在最近识别记录中查看结果')
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 // Schedule management
@@ -657,8 +679,9 @@ async function parseResult() {
     await api.updateTranscription(resultId.value, { ...resultData.value })
     // Call shared extraction pipeline with optional pdf_filename
     const data = await api.extractFromText(meetingText, resultFilename.value, pdfFilename.value)
+    const task = await waitForTask(data.task_id)
     // Navigate to ReviewView for editing/saving/pushing (shared with docx flow)
-    router.push({ name: 'review', params: { id: data.id } })
+    router.push({ name: 'review', params: { id: task.result_id } })
   } catch (e) {
     flash.value = `解析失败: ${e.message}`
     flashType.value = 'flash-error'

@@ -86,6 +86,10 @@ export default {
     return request('/auth/logout', { method: 'POST' })
   },
 
+  getTask(taskId) {
+    return request(`/tasks/${taskId}`)
+  },
+
   // ── Extraction from text (used by transcription flow) ──
   extractFromText(meetingText, originalFilename, pdfFilename = '') {
     return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename, pdf_filename: pdfFilename } })

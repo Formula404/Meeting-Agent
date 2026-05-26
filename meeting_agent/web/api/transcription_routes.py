@@ -8,7 +8,7 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -22,23 +22,18 @@ def log_stage(name: str, start: float) -> float:
     perf_logger.info("STAGE %s cost=%.3fs", name, cost)
     return time.perf_counter()
 
-from meeting_agent.transcription.workflow import (
-    run_transcription_extraction,
-    run_transcription_parse,
-)
+from meeting_agent.transcription.workflow import run_transcription_parse
 from meeting_agent.transcription.docx_export import export_to_docx
 from meeting_agent.transcription.pdf_export import export_to_pdf, export_to_pdf_from_html
 from meeting_agent.services.asr_service import (
     SUPPORTED_AUDIO_EXTENSIONS,
-    get_transcribed_text_via_proxy,
-    get_transcribed_text_from_url,
 )
 from meeting_agent.web.auth import get_current_user
 from meeting_agent.web.converter import convert_result_for_push
 from meeting_agent.services.message_service import send_meeting_summary_from_result
 from meeting_agent.services.schedule_service import create_meeting_schedules_from_result
 from meeting_agent.web.models import (
-    create_transcription_result,
+    create_background_task,
     delete_transcription_result,
     get_transcription_result,
     list_transcription_results,
@@ -72,7 +67,7 @@ def transcribe(
     meeting_recorder: str = Form(""),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """上传录音文件，经过 ASR 语音识别 → 生成会议纪要草稿。
+    """上传录音文件，创建后台 ASR + LLM 任务并立即返回 task_id。
 
     文件先匿名上传到 tflink 中转获取公网 URL，再提交腾讯云 ASR URL 拉取模式识别，
     绕过了 ASR 直传 5MB 限制，最大支持 100MB 的音频文件。
@@ -111,59 +106,26 @@ def transcribe(
         shutil.copyfileobj(file.file, f)
     _stage_start = log_stage("save_audio", _stage_start)
 
-    # Step 1: ASR 语音识别（经 tflink 中转，无 5MB 限制）
-    try:
-        transcribed_text = get_transcribed_text_via_proxy(audio_path)
-    except Exception as e:
-        raise HTTPException(500, f"语音识别失败: {e}") from e
-    _stage_start = log_stage("asr_total", _stage_start)
-
-    if not transcribed_text.strip():
-        raise HTTPException(500, "语音识别结果为空")
-
-    # 将转写文本保存为 .txt 供 LLM 使用
-    text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
-    text_path = INPUT_DIR / text_filename
-    text_path.write_text(transcribed_text, encoding="utf-8")
-    _stage_start = log_stage("save_text", _stage_start)
-
-    # Step 2: LLM 生成会议纪要草稿
-    try:
-        result_data = run_transcription_extraction(
-            text_path,
-            meeting_name=meeting_name,
-            meeting_time=meeting_time,
-            meeting_location=meeting_location,
-            meeting_chair=meeting_chair,
-            meeting_attendees=meeting_attendees,
-            meeting_departments=meeting_departments,
-            meeting_recorder=meeting_recorder,
-        )
-    except Exception as e:
-        # 即使 LLM 生成失败，也保存 ASR 原始结果
-        result_data = {
-            "meeting": transcribed_text,
-            "meeting_date": "",
-            "push_dept": [],
-            "push_user": [],
-            "schedules": [],
-        }
-    _stage_start = log_stage("llm_generate", _stage_start)
-
-    # 持久化
-    record = create_transcription_result(
-        original_filename=file.filename,
-        result_data=result_data,
-        user_prompt="",
+    task = create_background_task(
+        "transcribe_file",
+        {
+            "audio_path": str(audio_path),
+            "original_filename": file.filename,
+            "meeting_name": meeting_name,
+            "meeting_time": meeting_time,
+            "meeting_location": meeting_location,
+            "meeting_chair": meeting_chair,
+            "meeting_attendees": meeting_attendees,
+            "meeting_departments": meeting_departments,
+            "meeting_recorder": meeting_recorder,
+        },
         web_user_id=current_user["id"],
     )
     log_stage("db_write", _stage_start)
-
     return {
-        "id": record["id"],
-        "original_filename": record["original_filename"],
-        "created_at": record["created_at"],
-        "result": result_data,
+        "task_id": task["id"],
+        "status": task["status"],
+        "original_filename": file.filename,
     }
 
 
@@ -185,7 +147,7 @@ def transcribe_from_url(
     body: TranscribeUrlBody,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    """通过音频文件 URL 进行语音识别 → 生成会议纪要草稿。
+    """通过音频文件 URL 创建后台 ASR + LLM 任务并立即返回 task_id。
 
     适用于大于 5MB 的录音文件。需提供公网可访问的音频文件 URL
     （如阿里云 OSS 签名 URL），由腾讯云 ASR 服务拉取识别。
@@ -206,60 +168,26 @@ def transcribe_from_url(
             f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
         )
 
-    _stage_start = time.perf_counter()
-
-    # Step 1: ASR 语音识别（URL 拉取模式，无 5MB 限制）
-    try:
-        transcribed_text = get_transcribed_text_from_url(audio_url)
-    except Exception as e:
-        raise HTTPException(500, f"语音识别失败: {e}") from e
-    _stage_start = log_stage("asr_total", _stage_start)
-
-    if not transcribed_text.strip():
-        raise HTTPException(500, "语音识别结果为空")
-
-    # 将转写文本保存为 .txt 供 LLM 使用
-    text_filename = f"{uuid.uuid4().hex}_transcribed.txt"
-    text_path = INPUT_DIR / text_filename
-    text_path.write_text(transcribed_text, encoding="utf-8")
-    _stage_start = log_stage("save_text", _stage_start)
-
-    # Step 2: LLM 生成会议纪要草稿
-    try:
-        result_data = run_transcription_extraction(
-            text_path,
-            meeting_name=body.meeting_name,
-            meeting_time=body.meeting_time,
-            meeting_location=body.meeting_location,
-            meeting_chair=body.meeting_chair,
-            meeting_attendees=body.meeting_attendees,
-            meeting_departments=body.meeting_departments,
-            meeting_recorder=body.meeting_recorder,
-        )
-    except Exception as e:
-        result_data = {
-            "meeting": transcribed_text,
-            "meeting_date": "",
-            "push_dept": [],
-            "push_user": [],
-            "schedules": [],
-        }
-    _stage_start = log_stage("llm_generate", _stage_start)
-
-    # 持久化
-    record = create_transcription_result(
-        original_filename=filename,
-        result_data=result_data,
-        user_prompt="",
+    task = create_background_task(
+        "transcribe_url",
+        {
+            "audio_url": audio_url,
+            "original_filename": filename,
+            "meeting_name": body.meeting_name,
+            "meeting_time": body.meeting_time,
+            "meeting_location": body.meeting_location,
+            "meeting_chair": body.meeting_chair,
+            "meeting_attendees": body.meeting_attendees,
+            "meeting_departments": body.meeting_departments,
+            "meeting_recorder": body.meeting_recorder,
+        },
         web_user_id=current_user["id"],
     )
-    log_stage("db_write", _stage_start)
-
+    log_stage("db_write", time.perf_counter())
     return {
-        "id": record["id"],
+        "task_id": task["id"],
+        "status": task["status"],
         "original_filename": filename,
-        "created_at": record["created_at"],
-        "result": result_data,
     }
 
 

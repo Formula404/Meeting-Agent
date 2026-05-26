@@ -131,6 +131,30 @@ def init_db() -> None:
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "pushed_at TIMESTAMP)"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS background_tasks ("
+            "id TEXT PRIMARY KEY, "
+            "task_type TEXT NOT NULL CHECK(task_type IN ("
+            "'extract_docx','extract_text','transcribe_file','transcribe_url'"
+            ")), "
+            "status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ("
+            "'pending','running','success','failed'"
+            ")), "
+            "web_user_id INTEGER DEFAULT NULL "
+            "REFERENCES web_users(id) ON DELETE SET NULL, "
+            "payload_json TEXT NOT NULL, "
+            "result_type TEXT DEFAULT '', "
+            "result_id TEXT DEFAULT '', "
+            "error TEXT DEFAULT '', "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "started_at TIMESTAMP, "
+            "finished_at TIMESTAMP)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_background_tasks_queue "
+            "ON background_tasks (status, task_type, created_at)"
+        )
         cur.close()
         # Migrations: add columns if missing (existing DB)
         # Use information_schema checks to avoid transaction-abort from DuplicateColumn

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from psycopg2.errors import UniqueViolation
 
@@ -427,3 +427,106 @@ def mark_transcription_result_pushed(result_id: str) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+# ── Background Tasks ──────────────────────────────────────────────────────
+
+def create_background_task(
+    task_type: str,
+    payload: Dict[str, Any],
+    web_user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    task_id = str(uuid.uuid4())
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO background_tasks "
+            "(id, task_type, web_user_id, payload_json) "
+            "VALUES (%s, %s, %s, %s)",
+            (task_id, task_type, web_user_id, json.dumps(payload, ensure_ascii=False)),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM background_tasks WHERE id = %s", (task_id,)).fetchone()
+        return _decode_task_row(dict(row))
+    finally:
+        conn.close()
+
+
+def get_background_task(task_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM background_tasks WHERE id = %s", (task_id,)).fetchone()
+        return _decode_task_row(dict(row)) if row else None
+    finally:
+        conn.close()
+
+
+def claim_next_background_task(task_types: Sequence[str]) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE background_tasks SET "
+            "status='running', started_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
+            "WHERE id = ("
+            "  SELECT id FROM background_tasks "
+            "  WHERE status='pending' AND task_type = ANY(%s) "
+            "  ORDER BY created_at "
+            "  FOR UPDATE SKIP LOCKED "
+            "  LIMIT 1"
+            ") "
+            "RETURNING *",
+            (list(task_types),),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return _decode_task_row(dict(row)) if row else None
+    finally:
+        conn.close()
+
+
+def complete_background_task(task_id: str, result_type: str, result_id: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE background_tasks SET "
+            "status='success', result_type=%s, result_id=%s, error='', "
+            "updated_at=CURRENT_TIMESTAMP, finished_at=CURRENT_TIMESTAMP "
+            "WHERE id=%s",
+            (result_type, result_id, task_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fail_background_task(task_id: str, error: str) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE background_tasks SET "
+            "status='failed', error=%s, updated_at=CURRENT_TIMESTAMP, finished_at=CURRENT_TIMESTAMP "
+            "WHERE id=%s",
+            (error[:4000], task_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reset_running_background_tasks() -> int:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE background_tasks SET "
+            "status='pending', updated_at=CURRENT_TIMESTAMP, started_at=NULL "
+            "WHERE status='running'"
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def _decode_task_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    row["payload_json"] = json.loads(row["payload_json"])
+    return row
