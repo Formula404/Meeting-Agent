@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Sequence
 
 from meeting_agent.schemas import MeetingOutput
-from meeting_agent.services.asr_service import get_transcribed_text_from_url, get_transcribed_text_via_proxy
+from meeting_agent.services.asr_service import get_transcribed_text_from_url, transcribe_audio_file
 from meeting_agent.transcription.workflow import run_transcription_extraction
 from meeting_agent.web.database import init_db
 from meeting_agent.web.models import (
@@ -70,7 +70,7 @@ def _run_transcribe_task(task: Dict[str, Any]) -> None:
     web_user_id = task.get("web_user_id")
 
     if task_type == "transcribe_file":
-        transcribed_text = get_transcribed_text_via_proxy(Path(payload["audio_path"]))
+        transcribed_text = transcribe_audio_file(Path(payload["audio_path"]))
         original_filename = payload["original_filename"]
     elif task_type == "transcribe_url":
         transcribed_text = get_transcribed_text_from_url(payload["audio_url"])

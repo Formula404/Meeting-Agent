@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import base64
+import json
+import math
+import subprocess
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
 
 from tencentcloud.common import credential
 from tencentcloud.common.exception.tencent_cloud_sdk_exception import TencentCloudSDKException
@@ -24,6 +28,11 @@ SUPPORTED_AUDIO_EXTENSIONS = {
 
 POLL_INTERVAL = 3  # 轮询间隔（秒）
 MAX_POLL_TIME = 1800  # 最长等待 30 分钟
+
+# ── 大文件自动分片 ──
+MAX_CHUNK_DURATION = 7200  # 每片最长 2 小时（ASR 单任务约 3h 上限，留 buffer）
+MAX_CHUNK_SIZE = 90 * 1024 * 1024  # 每片最大 90MB（tflink 单文件 100MB 上限，留 buffer）
+CHUNK_OVERLAP = 30  # 相邻片之间重叠 30 秒，避免切分点丢词
 
 
 def _get_client() -> asr_client.AsrClient:
@@ -201,3 +210,190 @@ def get_transcribed_text_via_proxy(audio_path: Path) -> str:
 
     task_id = create_rec_task_from_url(audio_url)
     return wait_for_result(task_id)
+
+
+# ═══════════════════════════════════════════════════════════════
+# 大文件自动分片转写（超 100MB 或超 3h 录音）
+# ═══════════════════════════════════════════════════════════════
+
+def _get_audio_info(file_path: Path) -> dict:
+    """通过 ffprobe 获取音频文件时长（秒）和大小（字节）。"""
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-show_entries", "format=duration,size",
+        "-of", "json",
+        str(file_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except FileNotFoundError:
+        raise RuntimeError(
+            "未找到 ffprobe/ffmpeg，请确保已安装 ffmpeg。\n"
+            "  apt-get install ffmpeg   (Debian/Ubuntu)\n"
+            "  brew install ffmpeg      (macOS)"
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffprobe 分析音频文件失败: {e.stderr[:500] if e.stderr else str(e)}")
+
+    info = json.loads(result.stdout)
+    fmt = info.get("format", {})
+    duration = float(fmt.get("duration", 0))
+    size = int(fmt.get("size", 0))
+    if duration <= 0:
+        raise RuntimeError(f"无法获取音频文件时长 (ffprobe 返回 duration={duration}): {file_path}")
+    return {"duration": duration, "size": size}
+
+
+def _calculate_chunks(file_path: Path) -> int:
+    """根据时长和大小双约束计算所需分片数。"""
+    info = _get_audio_info(file_path)
+    duration = info["duration"]
+    file_size = info["size"]
+
+    n_by_duration = max(1, math.ceil(duration / MAX_CHUNK_DURATION))
+    n_by_size = max(1, math.ceil(file_size / MAX_CHUNK_SIZE))
+    n = max(n_by_duration, n_by_size)
+
+    if n > 1:
+        print(f"[ASR] 文件 {file_path.name}: 时长 {duration:.0f}s / 大小 {file_size / 1024 / 1024:.0f}MB "
+              f"→ 自动分 {n} 片处理")
+    return n
+
+
+def _split_audio_with_overlap(file_path: Path, num_chunks: int, output_dir: Path) -> list[Path]:
+    """用 ffmpeg 将音频切分为 N 片，相邻片之间重叠 CHUNK_OVERLAP 秒。"""
+    info = _get_audio_info(file_path)
+    total_duration = info["duration"]
+    chunk_duration = total_duration / num_chunks
+    suffix = file_path.suffix
+
+    chunk_paths = []
+    for i in range(num_chunks):
+        start = max(0, i * chunk_duration - (CHUNK_OVERLAP if i > 0 else 0))
+        if i < num_chunks - 1:
+            chunk_len = chunk_duration + CHUNK_OVERLAP
+        else:
+            chunk_len = total_duration - start
+
+        output_path = output_dir / f"{file_path.stem}_chunk_{i:03d}{suffix}"
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start),
+            "-i", str(file_path),
+            "-t", str(chunk_len),
+            "-c", "copy",
+            str(output_path),
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"ffmpeg 分片失败 (chunk {i}): {e.stderr[:500] if e.stderr else str(e)}")
+
+        chunk_paths.append(output_path)
+        print(f"[ASR]   分片 {i + 1}/{num_chunks}: {start:.0f}s → {start + chunk_len:.0f}s ({output_path.name})")
+
+    return chunk_paths
+
+
+def _merge_chunk_results(results: list[str]) -> str:
+    """合并多片 ASR 结果，在文本层去重重叠部分。"""
+    if not results:
+        return ""
+    if len(results) == 1:
+        return results[0]
+
+    merged = results[0]
+    for i in range(1, len(results)):
+        curr = results[i]
+        tail = merged[-300:].strip()
+        head = curr[:300].strip()
+
+        # 从长到短匹配尾部与首部的公共部分（最小匹配 5 个字符避免误判）
+        overlap_len = 0
+        max_check = min(len(tail), len(head), 300)
+        for ol in range(max_check, 4, -1):
+            if tail[-ol:] == head[:ol]:
+                overlap_len = ol
+                break
+
+        if overlap_len > 0:
+            merged += curr[overlap_len:]
+        else:
+            merged += "\n" + curr
+
+    return merged
+
+
+def get_transcribed_text_via_proxy_chunked(audio_path: Path) -> str:
+    """分片版转写：切分 → 逐片上传 tflink → 全部提交 ASR → 并行等待 → 合并。
+
+    适用于超大型录音文件（>100MB 或 >3 小时）。
+
+    Args:
+        audio_path: 音频文件路径。
+
+    Returns:
+        合并后的完整语音转写文本。
+    """
+    from meeting_agent.services.tflink_service import upload_to_tflink
+
+    num_chunks = _calculate_chunks(audio_path)
+    if num_chunks <= 1:
+        return get_transcribed_text_via_proxy(audio_path)
+
+    with tempfile.TemporaryDirectory(prefix="asr_chunks_") as tmp_dir:
+        work_dir = Path(tmp_dir)
+        chunk_paths = _split_audio_with_overlap(audio_path, num_chunks, work_dir)
+
+        # Phase 1: 串行上传 tflink → 提交 ASR，收集 TaskId
+        task_ids: list[int] = []
+        for chunk_path in chunk_paths:
+            print(f"[ASR] 上传分片 {chunk_path.name} 到 tflink...")
+            audio_url = upload_to_tflink(chunk_path)
+            print(f"[ASR]   获取到链接，提交 ASR 任务...")
+            task_id = create_rec_task_from_url(audio_url)
+            task_ids.append(task_id)
+            print(f"[ASR]   ASR TaskId: {task_id}")
+
+        # Phase 2: 并行等待所有 ASR 任务完成
+        print(f"[ASR] 等待 {len(task_ids)} 个 ASR 任务完成...")
+        results: list[str | None] = [None] * len(task_ids)
+        with ThreadPoolExecutor(max_workers=len(task_ids)) as pool:
+            fut_map = {pool.submit(wait_for_result, tid): idx for idx, tid in enumerate(task_ids)}
+            for future in as_completed(fut_map):
+                idx = fut_map[future]
+                results[idx] = future.result()
+
+        # 确保所有结果到位
+        if any(r is None for r in results):
+            raise RuntimeError("部分 ASR 分片任务未返回结果")
+
+    # Phase 3: 按序合并
+    merged = _merge_chunk_results(results)  # type: ignore[arg-type]
+    print(f"[ASR] 合并完成: {len(results)} 片 → {len(merged)} 字符")
+    return merged
+
+
+def transcribe_audio_file(audio_path: Path) -> str:
+    """智能音频转写入口：自动判断是否需要分片，透明返回转写文本。
+
+    - 小文件（≤90MB / ≤2h）：走原有单次 tflink→ASR 路径
+    - 大文件（超限）：自动分片 → 逐片 tflink → 并行 ASR → 合并结果
+
+    Args:
+        audio_path: 音频文件路径。
+
+    Returns:
+        完整的语音转写文本。
+    """
+    try:
+        num_chunks = _calculate_chunks(audio_path)
+    except RuntimeError as e:
+        # ffprobe 不可用时 fallback 到原有逻辑
+        print(f"[ASR] 无法探测音频信息 ({e})，使用单次转写（如文件过大可能失败）")
+        return get_transcribed_text_via_proxy(audio_path)
+
+    if num_chunks <= 1:
+        return get_transcribed_text_via_proxy(audio_path)
+
+    return get_transcribed_text_via_proxy_chunked(audio_path)
