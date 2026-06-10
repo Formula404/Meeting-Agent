@@ -91,16 +91,19 @@ export default {
   },
 
   // ── Extraction from text (used by transcription flow) ──
-  extractFromText(meetingText, originalFilename, pdfFilename = '') {
-    return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename, pdf_filename: pdfFilename } })
+  extractFromText(meetingText, originalFilename, pdfFilename = '', templateId = '') {
+    return request('/extract-from-text', { method: 'POST', body: { meeting_text: meetingText, original_filename: originalFilename, pdf_filename: pdfFilename, template_id: templateId } })
   },
 
   // ── Extraction ──
-  uploadFile(file, pdfFile) {
+  uploadFile(file, pdfFile, templateId = '') {
     const form = new FormData()
     form.append('file', file)
     if (pdfFile) {
       form.append('pdf_file', pdfFile)
+    }
+    if (templateId) {
+      form.append('template_id', templateId)
     }
     return request('/extract', { method: 'POST', body: form })
   },
@@ -195,6 +198,7 @@ export default {
     form.append('meeting_attendees', metadata.meeting_attendees || '')
     form.append('meeting_departments', metadata.meeting_departments || '')
     form.append('meeting_recorder', metadata.meeting_recorder || '')
+    form.append('template_id', metadata.template_id || '')
     return request('/transcribe', { method: 'POST', body: form })
   },
 
@@ -211,6 +215,7 @@ export default {
         meeting_attendees: metadata.meeting_attendees || '',
         meeting_departments: metadata.meeting_departments || '',
         meeting_recorder: metadata.meeting_recorder || '',
+        template_id: metadata.template_id || '',
       },
     })
   },
@@ -286,5 +291,32 @@ export default {
     return request(`/transcribe/${id}`, { method: 'DELETE' }).catch((err) => {
       return request(`/transcribe/${id}/delete`, { method: 'POST' })
     })
+  },
+
+  // ── Templates ──
+  listTemplates() {
+    return request('/templates')
+  },
+
+  getTemplate(id) {
+    return request(`/templates/${id}`)
+  },
+
+  createTemplate(body) {
+    return request('/templates', { method: 'POST', body })
+  },
+
+  updateTemplate(id, body) {
+    return request(`/templates/${id}`, { method: 'PUT', body })
+  },
+
+  deleteTemplate(id) {
+    return request(`/templates/${id}`, { method: 'DELETE' })
+  },
+
+  generateStylePrompt(docxFile) {
+    const form = new FormData()
+    form.append('file', docxFile)
+    return request('/templates/generate-prompt', { method: 'POST', body: form })
   },
 }

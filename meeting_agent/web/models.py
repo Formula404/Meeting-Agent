@@ -212,13 +212,14 @@ def create_result(
     result_data: Dict[str, Any],
     pdf_filename: str = "",
     web_user_id: Optional[int] = None,
+    template_id: str = "",
 ) -> Dict[str, Any]:
     result_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO extraction_results (id, original_filename, pdf_filename, web_user_id, result_json) VALUES (%s, %s, %s, %s, %s)",
-            (result_id, original_filename, pdf_filename, web_user_id, json.dumps(result_data, ensure_ascii=False)),
+            "INSERT INTO extraction_results (id, original_filename, pdf_filename, web_user_id, result_json, template_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (result_id, original_filename, pdf_filename, web_user_id, json.dumps(result_data, ensure_ascii=False), template_id or None),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM extraction_results WHERE id = %s", (result_id,)).fetchone()
@@ -331,13 +332,14 @@ def create_transcription_result(
     result_data: Dict[str, Any],
     user_prompt: str = "",
     web_user_id: Optional[int] = None,
+    template_id: str = "",
 ) -> Dict[str, Any]:
     result_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO transcription_results (id, original_filename, user_prompt, web_user_id, result_json) VALUES (%s, %s, %s, %s, %s)",
-            (result_id, original_filename, user_prompt, web_user_id, json.dumps(result_data, ensure_ascii=False)),
+            "INSERT INTO transcription_results (id, original_filename, user_prompt, web_user_id, result_json, template_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (result_id, original_filename, user_prompt, web_user_id, json.dumps(result_data, ensure_ascii=False), template_id or None),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM transcription_results WHERE id = %s", (result_id,)).fetchone()
@@ -435,15 +437,16 @@ def create_background_task(
     task_type: str,
     payload: Dict[str, Any],
     web_user_id: Optional[int] = None,
+    template_id: str = "",
 ) -> Dict[str, Any]:
     task_id = str(uuid.uuid4())
     conn = get_connection()
     try:
         conn.execute(
             "INSERT INTO background_tasks "
-            "(id, task_type, web_user_id, payload_json) "
-            "VALUES (%s, %s, %s, %s)",
-            (task_id, task_type, web_user_id, json.dumps(payload, ensure_ascii=False)),
+            "(id, task_type, web_user_id, payload_json, template_id) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (task_id, task_type, web_user_id, json.dumps(payload, ensure_ascii=False), template_id or None),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM background_tasks WHERE id = %s", (task_id,)).fetchone()
@@ -523,6 +526,108 @@ def reset_running_background_tasks() -> int:
         )
         conn.commit()
         return cur.rowcount
+    finally:
+        conn.close()
+
+
+# ── Templates ─────────────────────────────────────────────────────────────
+
+def create_template(
+    name: str,
+    style_prompt: str,
+    created_by: int,
+    description: str = "",
+    sample_output: str = "{}",
+    is_default: bool = False,
+    is_builtin: bool = False,
+) -> Dict[str, Any]:
+    template_id = str(uuid.uuid4())
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO templates (id, name, description, style_prompt, sample_output, "
+            "created_by, is_default, is_builtin) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (template_id, name.strip(), description.strip(), style_prompt.strip(),
+             sample_output, created_by, is_default, is_builtin),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM templates WHERE id = %s", (template_id,)).fetchone()
+        return dict(row)
+    except UniqueViolation as e:
+        raise ValueError(f"创建模板失败: {e}") from e
+    finally:
+        conn.close()
+
+
+def get_template(template_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT t.*, COALESCE(u.username, '') AS creator_name "
+            "FROM templates t LEFT JOIN web_users u ON t.created_by = u.id "
+            "WHERE t.id = %s", (template_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_templates() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT t.*, COALESCE(u.username, '') AS creator_name "
+            "FROM templates t LEFT JOIN web_users u ON t.created_by = u.id "
+            "ORDER BY t.is_builtin DESC, t.created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def update_template(
+    template_id: str,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    style_prompt: Optional[str] = None,
+    sample_output: Optional[str] = None,
+) -> bool:
+    conn = get_connection()
+    try:
+        fields = []
+        values = []
+        if name is not None:
+            fields.append("name = %s")
+            values.append(name.strip())
+        if description is not None:
+            fields.append("description = %s")
+            values.append(description.strip())
+        if style_prompt is not None:
+            fields.append("style_prompt = %s")
+            values.append(style_prompt.strip())
+        if sample_output is not None:
+            fields.append("sample_output = %s")
+            values.append(sample_output)
+        if not fields:
+            return False
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        values.append(template_id)
+        cur = conn.execute(
+            f"UPDATE templates SET {', '.join(fields)} WHERE id = %s",
+            tuple(values),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_template(template_id: str) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute("DELETE FROM templates WHERE id = %s", (template_id,))
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 

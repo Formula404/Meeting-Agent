@@ -45,18 +45,24 @@ def extract_json_from_text(text: str) -> dict:
 # ----------------------
 def _extract_from_meeting_text(
     meeting_text: str,
+    style_prompt: str = "",
 ) -> MeetingOutput:
     """给定会议纪要文本，调用 LLM 提取结构化数据。"""
     # 1. 获取配置好的 AI 大模型
     llm = get_llm()
 
-    # 2. 拼接用户提示词：把会议文本填进模板
+    # 2. 构造 system prompt（追加模板风格要求）
+    system_content = SYSTEM_PROMPT
+    if style_prompt.strip():
+        system_content += f"\n\n【模板风格要求】\n{style_prompt.strip()}\n【模板风格要求结束】\n"
+
+    # 3. 拼接用户提示词：把会议文本填进模板
     user_prompt = USER_PROMPT_TEMPLATE.format(meeting_text=meeting_text)
 
-    # 3. 调用大模型！
+    # 4. 调用大模型！
     response = llm.invoke(
         [
-            SystemMessage(content=SYSTEM_PROMPT),  # 系统规则
+            SystemMessage(content=system_content),  # 系统规则
             HumanMessage(content=user_prompt),     # 会议内容 + 输出格式
         ]
     )
@@ -84,7 +90,8 @@ def _extract_from_meeting_text(
 # ----------------------
 def run_meeting_extraction(
     input_docx: str | Path,    # 输入：会议纪要 .docx 文件
-    output_dir: str | Path = "data/output"  # 输出：结果保存目录
+    output_dir: str | Path = "data/output",  # 输出：结果保存目录
+    style_prompt: str = "",
 ) -> MeetingOutput:
 
     # 1. 路径处理
@@ -96,7 +103,7 @@ def run_meeting_extraction(
     meeting_text = load_docx_text(input_docx)
 
     # 3. 提取结构化数据
-    result = _extract_from_meeting_text(meeting_text)
+    result = _extract_from_meeting_text(meeting_text, style_prompt=style_prompt)
 
     # 4. 把最终结果保存成 JSON 文件
     output_path = output_dir / f"{input_docx.stem}_result.json"
@@ -115,6 +122,7 @@ def run_meeting_extraction(
 # ----------------------
 def run_meeting_extraction_from_text(
     meeting_text: str,           # 输入：会议纪要文本
+    style_prompt: str = "",
 ) -> MeetingOutput:
     """直接输入会议纪要文本，运行 LLM 提取结构化数据（不经过 .docx 文件）。"""
-    return _extract_from_meeting_text(meeting_text)
+    return _extract_from_meeting_text(meeting_text, style_prompt=style_prompt)

@@ -201,6 +201,10 @@
               placeholder="输入记录人姓名"
             />
           </div>
+          <!-- Template selector -->
+          <div class="form-group" style="grid-column:1/-1">
+            <TemplateSelector v-model="templateId" />
+          </div>
         </div>
       </div>
     </template>
@@ -222,9 +226,54 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════
-         Step 3: Result Editor
+         Step 2.5: Parsing in progress (blocking the editor)
          ══════════════════════════════════════════════════════════════ -->
-    <template v-if="resultData">
+    <div v-if="parsing && !processing" class="card">
+      <div class="extracting-state">
+        <div class="spinner">
+          <div class="spinner-dot"></div>
+          <div class="spinner-dot"></div>
+          <div class="spinner-dot"></div>
+        </div>
+        <div class="extracting-title">{{ taskMessage || 'AI 正在解析会议纪要...' }}</div>
+        <div v-if="parsingTaskId" class="extracting-desc" style="margin-top:8px">
+          后台任务 ID: {{ parsingTaskId }}
+        </div>
+        <div class="extracting-desc">解析耗时可能较长，刷新页面后会自动恢复</div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Step 2.6: Parse completed — link to ReviewView
+         ══════════════════════════════════════════════════════════════ -->
+    <div v-if="extractResultId && !parsing && !processing" class="card">
+      <div class="extracting-state">
+        <div class="extracting-title" style="color:var(--success)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          会议纪要解析完成
+        </div>
+        <div class="flex gap-2 mt-4" style="justify-content:center">
+          <router-link :to="{ name: 'review', params: { id: extractResultId } }" class="btn btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            查看完整解析结果
+          </router-link>
+          <button class="btn btn-ghost" @click="clearExtractLink">
+            留在当前页面继续编辑
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         Step 3: Result Editor (only when not parsing and no completed extraction)
+         ══════════════════════════════════════════════════════════════ -->
+    <template v-if="resultData && !parsing && !extractResultId">
       <!-- Result info bar -->
       <div class="card" style="padding:var(--space-4) var(--space-5)">
         <div class="flex-between">
@@ -416,6 +465,7 @@ import api from '../api/index.js'
 import TagInput from '../components/TagInput.vue'
 import ScheduleEditor from '../components/ScheduleEditor.vue'
 import MeetingEditor from '../components/MeetingEditor.vue'
+import TemplateSelector from '../components/TemplateSelector.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -426,6 +476,7 @@ const isEditMode = computed(() => !!route.params.id)
 const fileInput = ref(null)
 const dragging = ref(false)
 const selectedFile = ref(null)
+const templateId = ref('')
 
 // URL input mode state
 const inputMode = ref('file')
@@ -438,6 +489,10 @@ const error = ref('')
 const flash = ref('')
 const flashType = ref('flash-info')
 const taskMessage = ref('')
+
+// Parse state (survives page reload via _extract fields in result_json)
+const parsingTaskId = ref('')
+const extractResultId = ref('')
 
 // Result state
 const resultId = ref(null)
@@ -506,6 +561,18 @@ async function loadExistingResult(id) {
     resultStatus.value = record.status
     resultData.value = normalizeSchedules(record.result_json)
     parsed.value = record.result_json._parsed === true
+
+    // Check for pending or completed extraction (survives page reload)
+    const savedExtractTaskId = record.result_json._extract_task_id
+    const savedExtractResultId = record.result_json._extract_result_id
+
+    if (savedExtractResultId) {
+      // Parse already completed — show link to ReviewView
+      extractResultId.value = savedExtractResultId
+    } else if (savedExtractTaskId) {
+      // Parse was started but not completed — resume polling
+      await resumeParsePolling(savedExtractTaskId)
+    }
   } catch (e) {
     error.value = `加载失败: ${e.message}`
   }
@@ -550,6 +617,7 @@ function clearAll() {
   audioUrl.value = ''
   audioFilename.value = ''
   error.value = ''
+  templateId.value = ''
   Object.assign(meetingForm, {
     name: '', time: '', location: '',
     chair: [], attendees: [], departments: [], recorder: [],
@@ -571,6 +639,7 @@ async function startTranscribe() {
     meeting_attendees: meetingForm.attendees.join(','),
     meeting_departments: meetingForm.departments.join(','),
     meeting_recorder: meetingForm.recorder.join(','),
+    template_id: templateId.value,
   }
 
   try {
@@ -662,6 +731,45 @@ async function saveResult() {
   }
 }
 
+// ── Parse recovery (survives page reload) ──
+
+async function resumeParsePolling(taskId) {
+  parsing.value = true
+  parsingTaskId.value = taskId
+  taskMessage.value = '检测到进行中的解析任务，正在等待完成...'
+
+  try {
+    const task = await waitForTask(taskId)
+    const rid = task.result_id
+    // Persist the result_id so next load skips polling
+    await api.updateTranscription(resultId.value, {
+      ...resultData.value,
+      _extract_task_id: taskId,
+      _extract_result_id: rid,
+    })
+    extractResultId.value = rid
+    parsed.value = true
+    parsing.value = false
+    parsingTaskId.value = ''
+    taskMessage.value = ''
+  } catch (e) {
+    if (e.message && e.message.includes('超时')) {
+      taskMessage.value = '解析任务仍在后台执行中，请稍后刷新页面查看'
+      // Keep parsing=true and parsingTaskId for recovery
+      return
+    }
+    flash.value = `解析恢复失败: ${e.message}`
+    flashType.value = 'flash-error'
+    parsing.value = false
+    parsingTaskId.value = ''
+    taskMessage.value = ''
+  }
+}
+
+function clearExtractLink() {
+  extractResultId.value = ''
+}
+
 // Parse meeting minutes → merge into shared extraction pipeline → ReviewView
 async function parseResult() {
   if (!resultId.value) return
@@ -674,19 +782,53 @@ async function parseResult() {
   parsing.value = true
   flash.value = ''
   error.value = ''
+  taskMessage.value = '正在提交解析任务...'
+
   try {
     // Save current transcription state first
     await api.updateTranscription(resultId.value, { ...resultData.value })
-    // Call shared extraction pipeline with optional pdf_filename
+
+    // Call shared extraction pipeline
     const data = await api.extractFromText(meetingText, resultFilename.value, pdfFilename.value)
-    const task = await waitForTask(data.task_id)
-    // Navigate to ReviewView for editing/saving/pushing (shared with docx flow)
-    router.push({ name: 'review', params: { id: task.result_id } })
+    const taskId = data.task_id
+    parsingTaskId.value = taskId
+
+    // Persist task_id immediately so page reload can recover
+    await api.updateTranscription(resultId.value, {
+      ...resultData.value,
+      _extract_task_id: taskId,
+    })
+
+    // Poll for completion
+    taskMessage.value = 'AI 正在解析会议纪要，请耐心等待...'
+    const task = await waitForTask(taskId)
+
+    // Persist result_id
+    const rid = task.result_id
+    await api.updateTranscription(resultId.value, {
+      ...resultData.value,
+      _extract_task_id: taskId,
+      _extract_result_id: rid,
+    })
+
+    // Navigate to ReviewView for editing structured result
+    router.push({ name: 'review', params: { id: rid } })
   } catch (e) {
-    flash.value = `解析失败: ${e.message}`
-    flashType.value = 'flash-error'
+    if (e.message && e.message.includes('超时')) {
+      flash.value = '解析任务已提交后台执行，因耗时较长尚未完成，请稍后刷新页面查看'
+      flashType.value = 'flash-info'
+      taskMessage.value = '解析任务仍在后台执行中...'
+    } else {
+      flash.value = `解析失败: ${e.message}`
+      flashType.value = 'flash-error'
+      parsingTaskId.value = ''
+    }
   } finally {
-    parsing.value = false
+    // Only clear parsing state if we're not recovering (no extractResultId yet)
+    if (!extractResultId.value && !parsingTaskId.value) {
+      parsing.value = false
+      taskMessage.value = ''
+    }
   }
 }
 

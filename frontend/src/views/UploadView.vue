@@ -164,6 +164,10 @@
             </div>
           </div>
         </div>
+        <!-- Template selector -->
+        <div class="mt-4">
+          <TemplateSelector v-model="templateId" />
+        </div>
         <div class="flex gap-2 mt-5">
           <button class="btn btn-primary" @click="startExtract">开始解析</button>
           <button class="btn btn-outline" @click="cancelFile">重新选择</button>
@@ -336,6 +340,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import TemplateSelector from '../components/TemplateSelector.vue'
 import api from '../api/index.js'
 
 const router = useRouter()
@@ -350,6 +355,7 @@ const resultId = ref(null)
 const taskMessage = ref('')
 const selectedFile = ref(null)
 const pdfFile = ref(null)
+const templateId = ref('')
 const recentList = ref([])
 const transcriptionList = ref([])
 const deletingId = ref(null)
@@ -484,7 +490,7 @@ async function startExtract() {
   resultId.value = null
   taskMessage.value = '文件已上传，等待后台解析...'
   try {
-    const data = await api.uploadFile(selectedFile.value, pdfFile.value)
+    const data = await api.uploadFile(selectedFile.value, pdfFile.value, templateId.value)
     const task = await waitForTask(data.task_id)
     resultId.value = task.result_id
     selectedFile.value = null

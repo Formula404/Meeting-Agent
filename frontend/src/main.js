@@ -48,6 +48,30 @@ const routes = [
     component: () => import('./views/TranscribeView.vue'),
     meta: { title: '编辑转录结果' },
   },
+  {
+    path: '/templates',
+    name: 'templates',
+    component: () => import('./views/TemplateListView.vue'),
+    meta: { title: '会议模板' },
+  },
+  {
+    path: '/templates/new',
+    name: 'template-create',
+    component: () => import('./views/TemplateEditorView.vue'),
+    meta: { title: '创建模板' },
+  },
+  {
+    path: '/templates/:id',
+    name: 'template-detail',
+    component: () => import('./views/TemplateDetailView.vue'),
+    meta: { title: '模板详情' },
+  },
+  {
+    path: '/templates/:id/edit',
+    name: 'template-edit',
+    component: () => import('./views/TemplateEditorView.vue'),
+    meta: { title: '编辑模板' },
+  },
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })

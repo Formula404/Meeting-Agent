@@ -45,6 +45,7 @@ def run_transcription_extraction(
     meeting_attendees: str = "",
     meeting_departments: str = "",
     meeting_recorder: str = "",
+    style_prompt: str = "",
 ) -> Dict[str, Any]:
     """阶段一：输入会议录音转写文字文件 → 生成会议纪要草稿。
 
@@ -72,7 +73,12 @@ def run_transcription_extraction(
     if not transcription_text.strip():
         raise ValueError("转录文件内容为空。")
 
-    # 2. 调用 LLM 生成会议纪要草稿
+    # 2. 构造 system prompt（追加模板风格要求）
+    system_content = GENERATE_SYSTEM_PROMPT
+    if style_prompt.strip():
+        system_content += f"\n\n【模板风格要求】\n{style_prompt.strip()}\n【模板风格要求结束】\n"
+
+    # 3. 调用 LLM 生成会议纪要草稿
     llm = get_llm()
     user_prompt = GENERATE_USER_PROMPT_TEMPLATE.format(
         transcription_text=transcription_text,
@@ -86,7 +92,7 @@ def run_transcription_extraction(
     )
 
     response = llm.invoke([
-        SystemMessage(content=GENERATE_SYSTEM_PROMPT),
+        SystemMessage(content=system_content),
         HumanMessage(content=user_prompt),
     ])
 

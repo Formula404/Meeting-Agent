@@ -155,6 +155,19 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_background_tasks_queue "
             "ON background_tasks (status, task_type, created_at)"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS templates ("
+            "id TEXT PRIMARY KEY, "
+            "name TEXT NOT NULL, "
+            "description TEXT DEFAULT '', "
+            "style_prompt TEXT NOT NULL DEFAULT '', "
+            "sample_output TEXT DEFAULT '{}', "
+            "created_by INTEGER NOT NULL REFERENCES web_users(id), "
+            "is_default BOOLEAN DEFAULT FALSE, "
+            "is_builtin BOOLEAN DEFAULT FALSE, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
         cur.close()
         # Migrations: add columns if missing (existing DB)
         # Use information_schema checks to avoid transaction-abort from DuplicateColumn
@@ -189,6 +202,30 @@ def init_db() -> None:
                 "ALTER TABLE transcription_results ADD COLUMN web_user_id INTEGER "
                 "REFERENCES web_users(id) ON DELETE SET NULL"
             )
+
+        # template_id on extraction_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='extraction_results' AND column_name='template_id'"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE extraction_results ADD COLUMN template_id TEXT")
+
+        # template_id on transcription_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='transcription_results' AND column_name='template_id'"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE transcription_results ADD COLUMN template_id TEXT")
+
+        # template_id on background_tasks
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='background_tasks' AND column_name='template_id'"
+        )
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE background_tasks ADD COLUMN template_id TEXT")
 
         cur.close()
         conn.commit()

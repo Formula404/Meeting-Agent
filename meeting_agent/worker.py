@@ -17,6 +17,7 @@ from meeting_agent.web.models import (
     create_result,
     create_transcription_result,
     fail_background_task,
+    get_template,
     reset_running_background_tasks,
 )
 from meeting_agent.workflow import run_meeting_extraction, run_meeting_extraction_from_text
@@ -31,32 +32,47 @@ def _handle_stop(signum: int, frame: object) -> None:
     _stopping = True
 
 
+def _get_style_prompt(template_id: str) -> str:
+    """Load style_prompt from a template. Returns empty string if not found."""
+    if not template_id:
+        return ""
+    try:
+        tmpl = get_template(template_id)
+        return (tmpl or {}).get("style_prompt", "")
+    except Exception:
+        return ""
+
+
 def _run_extract_task(task: Dict[str, Any]) -> None:
     payload = task["payload_json"]
     task_type = task["task_type"]
     web_user_id = task.get("web_user_id")
+    template_id = task.get("template_id") or ""
+    style_prompt = _get_style_prompt(template_id)
 
     if task_type == "extract_docx":
-        meeting: MeetingOutput = run_meeting_extraction(Path(payload["input_path"]))
+        meeting: MeetingOutput = run_meeting_extraction(Path(payload["input_path"]), style_prompt=style_prompt)
         result_data = meeting.model_dump(mode="json")
         record = create_result(
             original_filename=payload["original_filename"],
             result_data=result_data,
             pdf_filename=payload.get("pdf_filename", ""),
             web_user_id=web_user_id,
+            template_id=template_id,
         )
         complete_background_task(task["id"], "extraction", record["id"])
         return
 
     if task_type == "extract_text":
         meeting_text = str(payload["meeting_text"]).strip()
-        meeting: MeetingOutput = run_meeting_extraction_from_text(meeting_text)
+        meeting: MeetingOutput = run_meeting_extraction_from_text(meeting_text, style_prompt=style_prompt)
         result_data = meeting.model_dump(mode="json")
         record = create_result(
             original_filename=payload.get("original_filename") or "录音转文字_解析结果",
             result_data=result_data,
             pdf_filename=payload.get("pdf_filename", ""),
             web_user_id=web_user_id,
+            template_id=template_id,
         )
         complete_background_task(task["id"], "extraction", record["id"])
         return
@@ -68,6 +84,8 @@ def _run_transcribe_task(task: Dict[str, Any]) -> None:
     payload = task["payload_json"]
     task_type = task["task_type"]
     web_user_id = task.get("web_user_id")
+    template_id = task.get("template_id") or ""
+    style_prompt = _get_style_prompt(template_id)
 
     if task_type == "transcribe_file":
         transcribed_text = transcribe_audio_file(Path(payload["audio_path"]))
@@ -96,6 +114,7 @@ def _run_transcribe_task(task: Dict[str, Any]) -> None:
             meeting_attendees=payload.get("meeting_attendees", ""),
             meeting_departments=payload.get("meeting_departments", ""),
             meeting_recorder=payload.get("meeting_recorder", ""),
+            style_prompt=style_prompt,
         )
     except Exception:
         result_data = {
@@ -111,6 +130,7 @@ def _run_transcribe_task(task: Dict[str, Any]) -> None:
         result_data=result_data,
         user_prompt="",
         web_user_id=web_user_id,
+        template_id=template_id,
     )
     complete_background_task(task["id"], "transcription", record["id"])
 

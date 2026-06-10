@@ -50,7 +50,7 @@ def upload_to_tflink(file_path: Path) -> str:
     except Exception as e:
         raise RuntimeError(f"解析 tflink 响应失败: {e}") from e
 
-    download_link = data.get("downloadLink") or data.get("downloadLinkEncoded")
+    download_link = data.get("downloadLinkEncoded") or data.get("downloadLink")
     if not download_link:
         raise RuntimeError("tflink 响应中未找到下载链接")
 

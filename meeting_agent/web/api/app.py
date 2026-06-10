@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import uuid
@@ -21,27 +22,36 @@ from meeting_agent.web.auth import (
 )
 from meeting_agent.web.converter import convert_result_for_push
 from meeting_agent.web.database import init_db
+from meeting_agent.document_loader import load_docx_text
+from meeting_agent.llm import get_llm
+from langchain_core.messages import SystemMessage, HumanMessage
 from meeting_agent.web.models import (
     create_background_task,
     create_department,
+    create_template,
     create_user,
     create_web_user,
     delete_department,
     delete_result,
     delete_session,
+    delete_template,
     delete_user,
     delete_web_user,
     get_background_task,
     get_result,
+    get_template,
+    get_web_user_by_id,
     get_web_user_by_username,
     list_departments,
     list_results,
+    list_templates,
     list_users,
     list_web_users,
     mark_result_pushed,
     update_department,
     update_pdf_filename,
     update_result,
+    update_template,
     update_user,
 )
 
@@ -50,15 +60,57 @@ init_db()
 
 # Seed default admin if ADMIN_PASSWORD env var is set and no admin exists
 _default_admin_password = os.environ.get("ADMIN_PASSWORD", "")
+_admin_user_id = None
 if _default_admin_password:
     existing = get_web_user_by_username("admin")
     if existing is None:
         try:
             _pw_hash = hash_password(_default_admin_password)
-            create_web_user("admin", _pw_hash, department_name="系统管理", role="admin")
+            admin = create_web_user("admin", _pw_hash, department_name="系统管理", role="admin")
+            _admin_user_id = admin["id"]
             print("Default admin user created (username=admin, password from ADMIN_PASSWORD)")
         except Exception:
             pass  # race condition — another instance may have created it
+    else:
+        _admin_user_id = existing["id"]
+
+# Seed built-in template "景枫周列会"
+if _admin_user_id:
+    try:
+        existing_templates = list_templates()
+        if not any(t.get("name") == "模板示例" for t in existing_templates):
+            create_template(
+                name="模板示例",
+                description="系统内置模板示例，按「上周回顾」「本周计划」「需协调事项」三部分组织",
+                style_prompt=(
+                    "请按以下风格书写会议纪要正文：\n\n"
+                    "1. 正文结构分三部分，依次为「上周工作回顾」「本周工作计划」「需协调事项」。\n"
+                    "2. 每部分使用 ## 二级标题，标题后空一行再接内容。\n"
+                    "3. 具体事项用 - 项目符号列表，每条一行，简洁扼要。\n"
+                    "4. 【上周工作回顾】每条格式：- 事项简述 + 完成状态（已完成/进行中/滞后）\n"
+                    "5. 【本周工作计划】每条格式：- 事项 + 责任人 + 计划完成时间\n"
+                    "6. 【需协调事项】每条格式：- 事项 + 需协调部门/人 + 期望结果\n"
+                    "7. 语言正式简洁，用词准确，避免口语化表达。\n"
+                    "8. 人名使用「姓+职务」称呼（如张总、李经理），不单独用姓名。\n"
+                    "9. 数字、日期、百分比等数据必须准确，不可编造。"
+                ),
+                sample_output=(
+                    "## 上周工作回顾\n"
+                    "- 景枫中心幕墙工程 — 已完成 85%，玻璃供货已协调（进行中）\n"
+                    "- 招商手册修订 — 已完成排版，待张总终审（已完成）\n\n"
+                    "## 本周工作计划\n"
+                    "- 完成幕墙工程剩余 15% 工作量 — 李经理 — 6月13日前\n"
+                    "- 确定三季度招商方案 — 招商部 — 6月11日前提交初稿\n\n"
+                    "## 需协调事项\n"
+                    "- 消防验收申报需工程部提供竣工图 — 协调工程部张工 — 本周三前提供\n"
+                    "- 新商户进场装修需物业配合 — 物业部 — 确认时间节点"
+                ),
+                created_by=_admin_user_id,
+                is_builtin=True,
+            )
+            print("Built-in template '模板示例' created")
+    except Exception as e:
+        print(f"Note: could not create built-in template: {e}")
 
 router = APIRouter(prefix="/api")
 
@@ -78,6 +130,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 def extract(
     file: UploadFile = File(...),
     pdf_file: Optional[UploadFile] = File(None),
+    template_id: str = "",
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Upload a .docx file, enqueue extraction, and return a task id quickly."""
@@ -109,6 +162,7 @@ def extract(
             "pdf_filename": pdf_filename,
         },
         web_user_id=current_user["id"],
+        template_id=template_id.strip(),
     )
     return {
         "task_id": task["id"],
@@ -122,6 +176,7 @@ class ExtractFromTextBody(BaseModel):
     meeting_text: str
     original_filename: str = ""
     pdf_filename: str = ""
+    template_id: str = ""
 
 
 @router.post("/extract-from-text")
@@ -147,6 +202,7 @@ def extract_from_text(
             "pdf_filename": body.pdf_filename,
         },
         web_user_id=current_user["id"],
+        template_id=body.template_id.strip(),
     )
     return {
         "task_id": task["id"],
@@ -289,6 +345,161 @@ async def upload_pdf(
         raise HTTPException(404, "结果不存在")
 
     return {"status": "ok", "pdf_filename": pdf_filename}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Template Management
+# ═══════════════════════════════════════════════════════════════════════
+
+class TemplateBody(BaseModel):
+    name: str
+    description: str = ""
+    style_prompt: str = ""
+    sample_output: str = "{}"
+
+
+@router.get("/templates")
+def api_list_templates(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    """List all templates — visible to all logged-in users."""
+    return list_templates()
+
+
+@router.get("/templates/{template_id}")
+def api_get_template(
+    template_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Get a single template with full details."""
+    tmpl = get_template(template_id)
+    if not tmpl:
+        raise HTTPException(404, "模板不存在")
+    return tmpl
+
+
+@router.post("/templates")
+def api_create_template(
+    body: TemplateBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Create a new template."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "模板名称不能为空")
+    try:
+        return create_template(
+            name=name,
+            description=body.description.strip(),
+            style_prompt=body.style_prompt.strip(),
+            sample_output=body.sample_output,
+            created_by=current_user["id"],
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.put("/templates/{template_id}")
+def api_update_template(
+    template_id: str,
+    body: TemplateBody,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
+    """Update a template. Only creator or admin can update."""
+    tmpl = get_template(template_id)
+    if not tmpl:
+        raise HTTPException(404, "模板不存在")
+    if current_user.get("role") != "admin" and tmpl.get("created_by") != current_user["id"]:
+        raise HTTPException(403, "仅模板创建者或管理员可修改")
+    ok = update_template(
+        template_id,
+        name=body.name.strip() or None,
+        description=body.description.strip() or None,
+        style_prompt=body.style_prompt.strip() or None,
+        sample_output=body.sample_output or None,
+    )
+    if not ok:
+        raise HTTPException(404, "模板不存在")
+    return {"status": "ok"}
+
+
+@router.delete("/templates/{template_id}")
+def api_delete_template(
+    template_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
+    """Delete a template. Only creator or admin can delete. No reference check."""
+    tmpl = get_template(template_id)
+    if not tmpl:
+        raise HTTPException(404, "模板不存在")
+    if current_user.get("role") != "admin" and tmpl.get("created_by") != current_user["id"]:
+        raise HTTPException(403, "仅模板创建者或管理员可删除")
+    ok = delete_template(template_id)
+    if not ok:
+        raise HTTPException(404, "模板不存在")
+    return {"status": "deleted"}
+
+
+GENERATE_STYLE_PROMPT_SYSTEM = """
+你是一个会议纪要风格分析专家。
+
+用户会提供一个会议纪要示例文档。请从以下四个维度分析它的写作风格，
+并输出一段自然语言描述，指导 AI 如何写出同样风格的会议纪要。
+
+分析维度：
+1. 整体结构：文档分几个部分？各部分标题是什么？段落如何组织？
+2. 语言风格：正式程度如何？用词特点？句式长短？语气？
+3. 条目化程度：是否大量使用项目符号、编号？还是纯段落？
+4. 待办事项/决议的表述方式：如何描述后续行动？责任人和时间如何体现？
+
+输出要求：
+- 用中文自然语言描述，直接告诉 AI 助手"请按以下风格书写"。
+- 包含具体格式示例，不要只说"使用项目符号"，要说"每个议题下用 - 开头的项目符号列出讨论要点"。
+- 输出应直接可用作 AI 的系统提示词补充，语言简洁明确。
+- 不要输出 JSON 或 markdown 代码块。
+"""
+
+
+@router.post("/templates/generate-prompt")
+def api_generate_style_prompt(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, str]:
+    """Upload a .docx meeting minutes example → AI analyzes style → returns style_prompt."""
+    if not file.filename or not file.filename.endswith(".docx"):
+        raise HTTPException(400, "仅支持 .docx 文件")
+
+    # Save to temp file
+    tmp_path = INPUT_DIR / f"_style_analysis_{uuid.uuid4().hex}.docx"
+    try:
+        with tmp_path.open("wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        # Read docx content
+        meeting_text = load_docx_text(tmp_path)
+        if not meeting_text.strip():
+            raise HTTPException(400, "文档内容为空")
+
+        # Call LLM for analysis
+        llm = get_llm()
+        user_prompt = f"请分析以下会议纪要示例的写作风格：\n\n{meeting_text}"
+        response = llm.invoke([
+            SystemMessage(content=GENERATE_STYLE_PROMPT_SYSTEM),
+            HumanMessage(content=user_prompt),
+        ])
+
+        style_prompt = response.content.strip()
+        if not style_prompt:
+            raise HTTPException(500, "AI 分析返回为空")
+
+        return {"style_prompt": style_prompt, "sample_output": meeting_text.strip()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"分析失败: {e}") from e
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 # ═══════════════════════════════════════════════════════════════════════

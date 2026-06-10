@@ -53,6 +53,7 @@ def transcribe(
     meeting_attendees: str = Form(""),
     meeting_departments: str = Form(""),
     meeting_recorder: str = Form(""),
+    template_id: str = Form(""),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """上传录音文件，创建后台 ASR + LLM 任务并立即返回 task_id。
@@ -85,8 +86,9 @@ def transcribe(
             f"不支持的音频格式：{suffix}，支持格式：{', '.join(sorted(SUPPORTED_AUDIO_EXTENSIONS))}",
         )
 
-    # 保存音频文件
-    audio_filename = f"{uuid.uuid4().hex}_{file.filename}"
+    # 保存音频文件（只保留 UUID + 扩展名，避免中文字符导致 ASR URL 校验失败）
+    suffix = Path(file.filename).suffix.lower()
+    audio_filename = f"{uuid.uuid4().hex}{suffix}"
     audio_path = ASR_AUDIO_DIR / audio_filename
     with audio_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -105,6 +107,7 @@ def transcribe(
             "meeting_recorder": meeting_recorder,
         },
         web_user_id=current_user["id"],
+        template_id=template_id.strip(),
     )
     return {
         "task_id": task["id"],
@@ -124,6 +127,7 @@ class TranscribeUrlBody(BaseModel):
     meeting_attendees: str = ""
     meeting_departments: str = ""
     meeting_recorder: str = ""
+    template_id: str = ""
 
 
 @router.post("/transcribe/url")
@@ -166,6 +170,7 @@ def transcribe_from_url(
             "meeting_recorder": body.meeting_recorder,
         },
         web_user_id=current_user["id"],
+        template_id=body.template_id.strip(),
     )
     return {
         "task_id": task["id"],
