@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field
 
 class ScheduleItem(BaseModel):
     title: str = Field(default="", description="日程或待办标题")
-    owner: List[str] = Field(default="", description="负责人")
+    owner: List[str] = Field(default_factory=list, description="负责人")
+    admins: List[str] = Field(default_factory=list, description="管理人（选填）")
+    remind_before: int = Field(default=0, description="提前提醒分钟数，0 表示不提醒（选填）")
     start_time: str = Field(default="", description="开始时间，没有则为空字符串")
     end_time: str = Field(default="", description="结束时间，没有则为空字符串")
     description: str = Field(default="", description="事项说明")

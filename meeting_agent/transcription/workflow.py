@@ -139,6 +139,8 @@ def run_transcription_parse(meeting_text: str) -> Dict[str, Any]:
         for s in data.get("schedules", []):
             if isinstance(s.get("owner"), str):
                 s["owner"] = [s["owner"]] if s["owner"] else []
+            if isinstance(s.get("admins"), str):
+                s["admins"] = [s["admins"]] if s["admins"] else []
         return data
     except (json.JSONDecodeError, ValueError) as e:
         debug_path = Path("data/output") / "parse_raw_output.txt"

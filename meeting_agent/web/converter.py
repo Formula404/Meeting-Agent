@@ -79,9 +79,15 @@ def convert_result_for_push(
         if isinstance(owners_raw, str):
             owners_raw = [owners_raw]
 
+        admins_raw = item.get("admins", [])
+        if isinstance(admins_raw, str):
+            admins_raw = [admins_raw]
+
         schedule: Dict[str, Any] = {
             "title": item.get("title", ""),
             "owner": [_lookup_userid(o, user_map) for o in owners_raw],
+            "admins": [_lookup_userid(a, user_map) for a in admins_raw],
+            "remind_before": int(item.get("remind_before") or 0),
             "start_time": _parse_datetime_to_timestamp(item.get("start_time", "")),
             "end_time": _parse_datetime_to_timestamp(item.get("end_time", "")),
             "description": item.get("description", ""),

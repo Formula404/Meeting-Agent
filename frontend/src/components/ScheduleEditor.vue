@@ -38,6 +38,17 @@
         <div v-if="requiredErrors.owner" class="field-error">必填</div>
       </div>
       <div class="form-group">
+        <label class="form-label">管理人 <span class="text-xs text-muted">（选填）</span></label>
+        <TagInput
+          class="schedule-tag-input"
+          :modelValue="item.admins ?? []"
+          @update:modelValue="update('admins', $event)"
+          :suggestions="userSuggestions"
+          :invalidValues="[]"
+          placeholder="输入管理人姓名"
+        />
+      </div>
+      <div class="form-group">
         <label class="form-label">开始时间</label>
         <input
           class="form-input"
@@ -60,6 +71,20 @@
           @input="onTimeInput('end_time', $event.target.value)"
         />
         <div v-if="requiredErrors.end_time" class="field-error">必填</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">提前提醒 <span class="text-xs text-muted">（选填）</span></label>
+        <select
+          class="form-input"
+          :value="item.remind_before ?? 0"
+          @change="update('remind_before', Number($event.target.value))"
+        >
+          <option :value="0">不提醒</option>
+          <option :value="5">5 分钟前</option>
+          <option :value="15">15 分钟前</option>
+          <option :value="60">1 小时前</option>
+          <option :value="1440">1 天前</option>
+        </select>
       </div>
       <div class="form-group">
         <label class="form-label">备注</label>

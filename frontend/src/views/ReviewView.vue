@@ -328,6 +328,8 @@ onMounted(async () => {
     const schedules = (data.schedules || []).map((s) => ({
       ...s,
       owner: Array.isArray(s.owner ?? []) ? s.owner : [s.owner].filter(Boolean),
+      admins: Array.isArray(s.admins ?? []) ? s.admins : [s.admins].filter(Boolean),
+      remind_before: typeof s.remind_before === 'number' ? s.remind_before : 0,
       start_time: normalizeTimestampValue(s.start_time),
       end_time: normalizeTimestampValue(s.end_time),
     }))
@@ -361,6 +363,8 @@ function addSchedule() {
   local.schedules.push({
     title: '',
     owner: [],
+    admins: [],
+    remind_before: 0,
     start_time: '',
     end_time: '',
     description: '',

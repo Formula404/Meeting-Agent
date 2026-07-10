@@ -24,7 +24,12 @@ def create_meeting_schedules_from_result(
     - schedules[].title -> summary
     - schedules[].description -> description
     - schedules[].owner -> attendees(userid)
+    - schedules[].admins -> admins（管理人，选填）
+    - schedules[].remind_before -> 提前提醒分钟数（选填，0 不提醒）
     - schedules[].start_time/end_time -> Unix 时间戳（秒）
+
+    提醒通知：当设置了 remind_before > 0 时，admins 会被合并到 attendees 中，
+    确保管理人也能收到日程提醒。
     """
     schedule_items = result.get("schedules", []) or []
     responses: list[dict] = []
@@ -36,6 +41,13 @@ def create_meeting_schedules_from_result(
 
         description = str(item.get("description", "")).strip()
         attendees = list(item.get("owner", []) or [])
+        admins = (list(item.get("admins", []) or []))[:3]  # 企微限制最多 3 人
+        remind_before = int(item.get("remind_before", 0) or 0)
+
+        # 有提醒时，将管理人合并到 attendees 中，确保其收到提醒
+        if remind_before > 0 and admins:
+            merged = list(dict.fromkeys(attendees + admins))  # 去重保序
+            attendees = merged
 
         start_ts = _as_int_timestamp(item.get("start_time"), f"schedules[{idx}].start_time")
         end_ts = _as_int_timestamp(item.get("end_time"), f"schedules[{idx}].end_time")
@@ -49,6 +61,8 @@ def create_meeting_schedules_from_result(
                 start_time=start_ts,
                 end_time=end_ts,
                 attendees=attendees,
+                admins=admins,
+                remind_before_secs=remind_before * 60,
             )
         )
 

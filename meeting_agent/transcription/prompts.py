@@ -90,7 +90,8 @@ XX部门 - XX：具体工作要求 + 时间节点 + 标准
 - push_user：从分解出的任务中识别应接收纪要的相关责任人。
 - schedules：从任务中提取可形成日程的事项，包含标题、负责人、时间、描述。
   owner 字段固定为数组格式。如果只有日期没有具体时刻，start_time 填写
-  "YYYY-MM-DD 未明确"。
+  "YYYY-MM-DD 未明确"。admins（管理人）和 remind_before（提前提醒分钟数）
+  为选填字段。
 
 【注意】
 - 不要编造原文中没有的信息。
@@ -128,6 +129,8 @@ PARSE_USER_PROMPT_TEMPLATE = """
     {{
       "title": "日程待办标题",
       "owner": ["负责人"],
+      "admins": ["管理人"],
+      "remind_before": 0,
       "start_time": "开始时间",
       "end_time": "结束时间",
       "description": "日程待办说明"
