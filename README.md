@@ -19,18 +19,18 @@
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 后端框架 | Python 3.11+ / FastAPI |
-| 前端 | Vue 3 + Vite + Tiptap（富文本编辑器） |
-| LLM SDK | LangChain（OpenAI-compatible） |
-| 文档解析 | python-docx |
+| 层       | 技术                                                        |
+| -------- | ----------------------------------------------------------- |
+| 后端框架 | Python 3.11+ / FastAPI                                      |
+| 前端     | Vue 3 + Vite + Tiptap（富文本编辑器）                       |
+| LLM SDK  | LangChain（OpenAI-compatible）                              |
+| 文档解析 | python-docx                                                 |
 | 语音识别 | 腾讯云 ASR SDK（直传 ≤5MB / URL 拉取 / tflink 中转 100MB） |
-| PDF 导出 | 浏览器无头打印（Edge/Chrome）+ fpdf2 双引擎回退 |
-| 数据校验 | Pydantic |
-| 数据存储 | PostgreSQL（ThreadedConnectionPool 连接池管理） |
-| 认证 | PBKDF2-HMAC-SHA256 600K 迭代 + session token |
-| 包管理 | uv |
+| PDF 导出 | 浏览器无头打印（Edge/Chrome）+ fpdf2 双引擎回退             |
+| 数据校验 | Pydantic                                                    |
+| 数据存储 | PostgreSQL（ThreadedConnectionPool 连接池管理）             |
+| 认证     | PBKDF2-HMAC-SHA256 600K 迭代 + session token                |
+| 包管理   | uv                                                          |
 
 ## 快速开始
 
@@ -168,55 +168,55 @@ cd frontend && npm run dev
 
 ### 认证
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
+| 方法     | 路径                   | 说明                       |
+| -------- | ---------------------- | -------------------------- |
 | `POST` | `/api/auth/register` | 注册账号（默认 role=user） |
-| `POST` | `/api/auth/login` | 登录获取 token |
-| `POST` | `/api/auth/logout` | 登出 |
-| `GET` | `/api/auth/me` | 获取当前用户信息 |
+| `POST` | `/api/auth/login`    | 登录获取 token             |
+| `POST` | `/api/auth/logout`   | 登出                       |
+| `GET`  | `/api/auth/me`       | 获取当前用户信息           |
 
 ### 会议纪要（提取）
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/extract` | 上传 .docx（可选 PDF 附件），创建后台提取任务 |
-| `POST` | `/api/extract-from-text` | 传入会议纪要文本，创建后台提取任务（用于转录流程） |
-| `GET` | `/api/results` | 获取所有解析记录列表（admin 全部，用户只看自己） |
-| `GET` | `/api/results/{id}` | 获取单条解析完整数据 |
-| `PUT` | `/api/results/{id}` | 更新解析结果（审阅编辑） |
-| `DELETE` | `/api/results/{id}` | 删除解析记录 |
-| `POST` | `/api/results/{id}/push` | 推送到企业微信（消息+日程+附件） |
-| `POST` | `/api/results/{id}/upload-pdf` | 上传关联 PDF 附件 |
+| 方法       | 路径                             | 说明                                               |
+| ---------- | -------------------------------- | -------------------------------------------------- |
+| `POST`   | `/api/extract`                 | 上传 .docx（可选 PDF 附件），创建后台提取任务      |
+| `POST`   | `/api/extract-from-text`       | 传入会议纪要文本，创建后台提取任务（用于转录流程） |
+| `GET`    | `/api/results`                 | 获取所有解析记录列表（admin 全部，用户只看自己）   |
+| `GET`    | `/api/results/{id}`            | 获取单条解析完整数据                               |
+| `PUT`    | `/api/results/{id}`            | 更新解析结果（审阅编辑）                           |
+| `DELETE` | `/api/results/{id}`            | 删除解析记录                                       |
+| `POST`   | `/api/results/{id}/push`       | 推送到企业微信（消息+日程+附件）                   |
+| `POST`   | `/api/results/{id}/upload-pdf` | 上传关联 PDF 附件                                  |
 
 ### 录音转写
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/transcribe` | 上传录音文件，创建后台 ASR+LLM 任务（经 tflink 中转，≤100MB） |
-| `POST` | `/api/transcribe/url` | 通过音频 URL 创建后台 ASR+LLM 任务（无大小限制，URL 拉取最大 5GB） |
-| `GET` | `/api/transcribe/results` | 获取转写记录列表 |
-| `GET` | `/api/transcribe/results/{id}` | 获取单条转写数据 |
-| `PUT` | `/api/transcribe/results/{id}` | 更新转写结果 |
-| `DELETE` | `/api/transcribe/results/{id}` | 删除转写记录 |
-| `POST` | `/api/transcribe/results/{id}/parse` | 阶段二：解析会议纪要 → 按部门分解任务 |
-| `POST` | `/api/transcribe/results/{id}/push` | 推送转写结果到企业微信 |
-| `POST` | `/api/transcribe/results/{id}/export-docx` | 导出为 .docx 文件 |
-| `POST` | `/api/transcribe/results/{id}/generate-pdf` | 生成 PDF 文件 |
-| `GET` | `/api/transcribe/results/{id}/download-pdf` | 下载生成的 PDF |
+| 方法       | 路径                                          | 说明                                                               |
+| ---------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| `POST`   | `/api/transcribe`                           | 上传录音文件，创建后台 ASR+LLM 任务（经 tflink 中转，≤100MB）     |
+| `POST`   | `/api/transcribe/url`                       | 通过音频 URL 创建后台 ASR+LLM 任务（无大小限制，URL 拉取最大 5GB） |
+| `GET`    | `/api/transcribe/results`                   | 获取转写记录列表                                                   |
+| `GET`    | `/api/transcribe/results/{id}`              | 获取单条转写数据                                                   |
+| `PUT`    | `/api/transcribe/results/{id}`              | 更新转写结果                                                       |
+| `DELETE` | `/api/transcribe/results/{id}`              | 删除转写记录                                                       |
+| `POST`   | `/api/transcribe/results/{id}/parse`        | 阶段二：解析会议纪要 → 按部门分解任务                             |
+| `POST`   | `/api/transcribe/results/{id}/push`         | 推送转写结果到企业微信                                             |
+| `POST`   | `/api/transcribe/results/{id}/export-docx`  | 导出为 .docx 文件                                                  |
+| `POST`   | `/api/transcribe/results/{id}/generate-pdf` | 生成 PDF 文件                                                      |
+| `GET`    | `/api/transcribe/results/{id}/download-pdf` | 下载生成的 PDF                                                     |
 
 ### 后台任务
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
+| 方法    | 路径                     | 说明                                                        |
+| ------- | ------------------------ | ----------------------------------------------------------- |
 | `GET` | `/api/tasks/{task_id}` | 查询后台任务状态（前端轮询用），返回 status/result_id/error |
 
 ### 用户与部门管理
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET/POST/PUT/DELETE` | `/api/users` | 企业微信用户 CRUD |
-| `GET/POST/PUT/DELETE` | `/api/departments` | 部门 CRUD |
-| `GET/POST/DELETE` | `/api/web-users` | Web 登录账号管理（admin 专属） |
+| 方法                    | 路径                 | 说明                           |
+| ----------------------- | -------------------- | ------------------------------ |
+| `GET/POST/PUT/DELETE` | `/api/users`       | 企业微信用户 CRUD              |
+| `GET/POST/PUT/DELETE` | `/api/departments` | 部门 CRUD                      |
+| `GET/POST/DELETE`     | `/api/web-users`   | Web 登录账号管理（admin 专属） |
 
 ## 部署
 
@@ -240,6 +240,7 @@ docker compose logs -f meeting-agent
 访问 `http://localhost:8000` 即可使用（默认映射端口 8011，见 docker-compose.yml）。
 
 > **注意事项：**
+>
 > - PostgreSQL 使用宿主机已有数据库（非容器内），需在 `.env` 中配置 `DATABASE_URL`
 > - Docker 容器通过 `host.docker.internal` 访问宿主机数据库
 > - 上传的文件（.docx / PDF / 录音）保存在 `./data/` 卷挂载目录
