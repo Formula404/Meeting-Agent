@@ -33,6 +33,7 @@ def create_user(name: str, userid: str, department_name: str = "") -> Dict[str, 
         row = conn.execute("SELECT * FROM users WHERE id = %s", (row_id,)).fetchone()
         return dict(row)
     except UniqueViolation as e:
+        conn.rollback()
         raise ValueError(f"用户已存在或 userid 重复: {e}") from e
     finally:
         conn.close()
@@ -51,6 +52,7 @@ def update_user(user_id: int, name: str, userid: str, department_name: str = "")
             raise ValueError(f"用户 id={user_id} 不存在")
         return dict(row)
     except UniqueViolation as e:
+        conn.rollback()
         raise ValueError(f"更新失败: {e}") from e
     finally:
         conn.close()
@@ -88,6 +90,7 @@ def create_department(name: str, dept_id: int) -> Dict[str, Any]:
         row = conn.execute("SELECT * FROM departments WHERE id = %s", (row_id,)).fetchone()
         return dict(row)
     except UniqueViolation as e:
+        conn.rollback()
         raise ValueError(f"部门已存在或 dept_id 重复: {e}") from e
     finally:
         conn.close()
@@ -106,6 +109,7 @@ def update_department(dept_pk: int, name: str, dept_id: int) -> Dict[str, Any]:
             raise ValueError(f"部门 id={dept_pk} 不存在")
         return dict(row)
     except UniqueViolation as e:
+        conn.rollback()
         raise ValueError(f"更新失败: {e}") from e
     finally:
         conn.close()
@@ -134,6 +138,7 @@ def create_web_user(username: str, password_hash: str, department_name: str = ""
         row = conn.execute("SELECT * FROM web_users WHERE id = %s", (row_id,)).fetchone()
         return dict(row)
     except UniqueViolation:
+        conn.rollback()
         raise ValueError("用户名已存在")
     finally:
         conn.close()
@@ -554,6 +559,7 @@ def create_template(
         row = conn.execute("SELECT * FROM templates WHERE id = %s", (template_id,)).fetchone()
         return dict(row)
     except UniqueViolation as e:
+        conn.rollback()
         raise ValueError(f"创建模板失败: {e}") from e
     finally:
         conn.close()
