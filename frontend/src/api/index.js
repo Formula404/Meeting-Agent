@@ -149,6 +149,10 @@ export default {
     return request('/users', { method: 'POST', body })
   },
 
+  createUsersBatch(users) {
+    return request('/users/batch', { method: 'POST', body: { users } })
+  },
+
   updateUser(id, body) {
     return request(`/users/${id}`, { method: 'PUT', body })
   },

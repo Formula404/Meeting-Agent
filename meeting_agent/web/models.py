@@ -22,21 +22,103 @@ def list_users() -> List[Dict[str, Any]]:
 
 
 def create_user(name: str, userid: str, department_name: str = "") -> Dict[str, Any]:
+    name = name.strip()
+    userid = userid.strip()
+    department_name = department_name.strip()
     conn = get_connection()
     try:
-        cur = conn.execute(
-            "INSERT INTO users (name, userid, department_name) VALUES (%s, %s, %s) RETURNING id",
-            (name.strip(), userid.strip(), department_name.strip()),
-        )
-        conn.commit()
-        row_id = cur.fetchone()["id"]
-        row = conn.execute("SELECT * FROM users WHERE id = %s", (row_id,)).fetchone()
-        return dict(row)
+        return _insert_user(conn, name, userid, department_name)
     except UniqueViolation as e:
         conn.rollback()
-        raise ValueError(f"用户已存在或 userid 重复: {e}") from e
+        # Data imported with an explicit id can leave the SERIAL sequence
+        # behind the table.  In that case a genuinely new name/userid fails on
+        # users_pkey and the old generic message misleadingly says the user is
+        # duplicated. Repair the sequence once and retry the insert.
+        if e.diag.constraint_name == "users_pkey":
+            conn.execute(
+                "SELECT setval(pg_get_serial_sequence('users', 'id'), "
+                "COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM users"
+            )
+            conn.commit()
+            try:
+                return _insert_user(conn, name, userid, department_name)
+            except UniqueViolation as retry_error:
+                conn.rollback()
+                raise ValueError(_user_conflict_message(retry_error)) from retry_error
+        raise ValueError(_user_conflict_message(e)) from e
     finally:
         conn.close()
+
+
+def _insert_user(conn: Any, name: str, userid: str, department_name: str) -> Dict[str, Any]:
+    cur = conn.execute(
+        "INSERT INTO users (name, userid, department_name) VALUES (%s, %s, %s) RETURNING *",
+        (name, userid, department_name),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    return dict(row)
+
+
+def _user_conflict_message(error: UniqueViolation) -> str:
+    constraint = error.diag.constraint_name
+    if constraint == "users_name_key":
+        return "姓名已存在"
+    if constraint == "users_userid_key":
+        return "UserID 已存在"
+    if constraint == "users_pkey":
+        return "用户编号序列异常，请重试"
+    return "用户姓名或 UserID 已存在"
+
+
+def create_users_batch(items: Sequence[Dict[str, str]]) -> Dict[str, Any]:
+    """Create only new users and report existing rows as skipped.
+
+    Existing means either the normalized name or userid is already present,
+    including a duplicate earlier in the same batch. Each create has its own
+    transaction so one conflict cannot poison or roll back the remaining rows.
+    """
+    existing = list_users()
+    names = {row["name"].strip() for row in existing}
+    userids = {row["userid"].strip() for row in existing}
+    created: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    for index, item in enumerate(items, start=1):
+        name = item["name"].strip()
+        userid = item["userid"].strip()
+        department_name = item.get("department_name", "").strip()
+
+        reasons = []
+        if name in names:
+            reasons.append("姓名已存在")
+        if userid in userids:
+            reasons.append("UserID 已存在")
+        if reasons:
+            skipped.append({"index": index, "name": name, "userid": userid, "reason": "、".join(reasons)})
+            continue
+
+        try:
+            row = create_user(name, userid, department_name)
+        except ValueError as error:
+            # Covers a concurrent insert between list_users() and create_user().
+            if str(error) not in {"姓名已存在", "UserID 已存在", "用户姓名或 UserID 已存在"}:
+                raise
+            skipped.append({"index": index, "name": name, "userid": userid, "reason": str(error)})
+            names.add(name)
+            userids.add(userid)
+            continue
+
+        created.append(row)
+        names.add(name)
+        userids.add(userid)
+
+    return {
+        "created_count": len(created),
+        "skipped_count": len(skipped),
+        "created": created,
+        "skipped": skipped,
+    }
 
 
 def update_user(user_id: int, name: str, userid: str, department_name: str = "") -> Dict[str, Any]:

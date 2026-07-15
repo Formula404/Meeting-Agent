@@ -30,6 +30,7 @@ from meeting_agent.web.models import (
     create_department,
     create_template,
     create_user,
+    create_users_batch,
     create_web_user,
     delete_department,
     delete_result,
@@ -658,6 +659,10 @@ class UserBody(BaseModel):
     department_name: str = ""
 
 
+class UserBatchBody(BaseModel):
+    users: List[UserBody]
+
+
 @router.get("/users")
 def api_list_users(current_user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
     return list_users()
@@ -665,10 +670,24 @@ def api_list_users(current_user: Dict[str, Any] = Depends(get_current_user)) -> 
 
 @router.post("/users")
 def api_create_user(body: UserBody, admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
+    if not body.name.strip() or not body.userid.strip():
+        raise HTTPException(400, "姓名和 UserID 不能为空")
     try:
         return create_user(body.name, body.userid, body.department_name)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@router.post("/users/batch")
+def api_create_users_batch(body: UserBatchBody, admin: Dict[str, Any] = Depends(require_admin)) -> Dict[str, Any]:
+    if not body.users:
+        raise HTTPException(400, "批量用户不能为空")
+    if len(body.users) > 1000:
+        raise HTTPException(400, "单次最多导入 1000 个用户")
+    invalid_rows = [i for i, user in enumerate(body.users, start=1) if not user.name.strip() or not user.userid.strip()]
+    if invalid_rows:
+        raise HTTPException(400, f"第 {', '.join(map(str, invalid_rows))} 行姓名或 UserID 为空")
+    return create_users_batch([user.model_dump() for user in body.users])
 
 
 class UserUpdateBody(BaseModel):

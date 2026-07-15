@@ -216,7 +216,7 @@
       <!-- Batch add -->
       <div class="modal-section">
         <h4 class="modal-section-title">批量导入</h4>
-        <p class="modal-hint">每行一条，字段用 Tab 或逗号分隔：<code>姓名, UserID, 部门</code></p>
+        <p class="modal-hint">每行一条，字段用 Tab 或逗号分隔：<code>姓名, UserID, 部门</code>。已有姓名或 UserID 会自动跳过。</p>
         <textarea
           class="form-input batch-textarea"
           v-model="userBatchText"
@@ -421,8 +421,7 @@ async function batchAddUsers() {
     setFlash('未解析到有效数据', 'flash-error')
     return
   }
-  userAdding.value = true
-  let ok = 0
+  const items = []
   const errors = []
   for (let i = 0; i < rows.length; i++) {
     const [name, userid, dept = ''] = rows[i]
@@ -430,22 +429,28 @@ async function batchAddUsers() {
       errors.push(`第 ${i + 1} 行: 姓名或 UserID 为空`)
       continue
     }
-    userBatchProgress.value = `${i + 1}/${rows.length}`
-    try {
-      await api.createUser({ name, userid, department_name: dept })
-      ok++
-    } catch (e) {
-      errors.push(`第 ${i + 1} 行 (${name}): ${e.message}`)
-    }
+    items.push({ name, userid, department_name: dept })
   }
-  userAdding.value = false
-  userBatchText.value = ''
-  userBatchProgress.value = ''
-  await refresh()
+
   if (errors.length) {
-    setFlash(`成功导入 ${ok} 条，${errors.length} 条失败: ${errors.join('; ')}`, 'flash-error')
-  } else {
-    setFlash(`成功导入 ${ok} 条`, 'flash-success')
+    setFlash(errors.join('; '), 'flash-error')
+    return
+  }
+
+  userAdding.value = true
+  userBatchProgress.value = `0/${items.length}`
+  try {
+    const result = await api.createUsersBatch(items)
+    userBatchProgress.value = `${items.length}/${items.length}`
+    userBatchText.value = ''
+    await refresh()
+    const message = `新增 ${result.created_count} 条，跳过已有 ${result.skipped_count} 条`
+    setFlash(message, result.created_count > 0 ? 'flash-success' : 'flash-info')
+  } catch (e) {
+    setFlash(e.message, 'flash-error')
+  } finally {
+    userAdding.value = false
+    userBatchProgress.value = ''
   }
 }
 

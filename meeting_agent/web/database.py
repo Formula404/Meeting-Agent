@@ -60,6 +60,19 @@ class _PoolConnectionWrapper:
         return cur
 
     def close(self) -> None:
+        # psycopg2 starts a transaction even for a plain SELECT.  Returning a
+        # connection with an open/failed transaction leaks that state into the
+        # next request that borrows it from the pool (most visibly as
+        # ``current transaction is aborted`` after a duplicate insert).
+        # rollback() is harmless after commit and is the standard pool reset.
+        if not self._conn.closed:
+            try:
+                self._conn.rollback()
+            except psycopg2.Error:
+                # A connection that cannot be reset must not go back into the
+                # pool; otherwise every later borrower inherits a broken one.
+                self._pool.putconn(self._conn, close=True)
+                return
         self._pool.putconn(self._conn)
 
 
