@@ -62,7 +62,6 @@
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import TextAlign from '@tiptap/extension-text-align'
-import Underline from '@tiptap/extension-underline'
 import { watch, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
@@ -105,7 +104,6 @@ const editor = useEditor({
       horizontalRule: true,
     }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    Underline,
   ],
   editorProps: {
     attributes: { class: 'editor-input' },
