@@ -126,6 +126,25 @@
             placeholder="输入部门名称"
           />
         </div>
+
+        <!-- project -->
+        <div class="form-group">
+          <label class="form-label">关联项目（选填）</label>
+          <div class="project-row">
+            <select class="form-select" v-model="selectedProjectId" style="flex:1">
+              <option :value="0">不关联项目</option>
+              <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+            <input
+              class="form-input"
+              v-model="newProjectName"
+              placeholder="输入新项目名快速创建"
+              style="flex:1"
+              @keydown.enter.prevent="createAndSelectProject"
+            />
+            <button class="btn btn-outline btn-sm" @click="createAndSelectProject" :disabled="!newProjectName.trim()">新建</button>
+          </div>
+        </div>
       </div>
 
       <!-- Schedules -->
@@ -182,26 +201,6 @@
           v-model="local.meeting"
           rows="15"
         ></textarea>
-      </div>
-
-      <!-- Project selector -->
-      <div class="card">
-        <label class="form-label" style="margin:0 0 8px">关联项目（选填）</label>
-        <div class="project-row">
-          <select class="form-select" v-model="selectedProjectId" style="flex:1">
-            <option :value="0">不关联项目</option>
-            <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-          <span class="project-or">或</span>
-          <input
-            class="form-input"
-            v-model="newProjectName"
-            placeholder="输入新项目名快速创建"
-            style="flex:1"
-            @keydown.enter.prevent="createAndSelectProject"
-          />
-          <button class="btn btn-outline btn-sm" @click="createAndSelectProject" :disabled="!newProjectName.trim()">新建</button>
-        </div>
       </div>
 
       <!-- Actions -->
@@ -655,12 +654,6 @@ async function push() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.project-or {
-  font-size: var(--text-xs);
-  color: var(--gray-400);
-  flex-shrink: 0;
 }
 
 .form-select {
