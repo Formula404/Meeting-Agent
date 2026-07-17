@@ -138,7 +138,7 @@ def api_get_project_statistics(
     if not target_name:
         raise HTTPException(404, "项目不存在")
 
-    proj_schedules = [s for s in full_stats["schedules"] if s["source"] == target_name]
+    proj_schedules = [s for s in full_stats["schedules"] if s["project_name"] == target_name]
     proj_overview = next((p for p in full_stats["project_stats"] if p["name"] == target_name), None)
 
     return {

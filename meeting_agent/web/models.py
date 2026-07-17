@@ -814,14 +814,14 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
         # Query pushed results with project info
         if is_admin:
             ext_rows = conn.execute(
-                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "SELECT r.id, r.original_filename, r.result_json, r.project_id, r.created_at, r.pushed_at, "
                 "COALESCE(p.name, '') AS project_name "
                 "FROM extraction_results r "
                 "LEFT JOIN projects p ON r.project_id = p.id "
                 "WHERE r.status = 'pushed'"
             ).fetchall()
             tra_rows = conn.execute(
-                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "SELECT r.id, r.original_filename, r.result_json, r.project_id, r.created_at, r.pushed_at, "
                 "COALESCE(p.name, '') AS project_name "
                 "FROM transcription_results r "
                 "LEFT JOIN projects p ON r.project_id = p.id "
@@ -829,7 +829,7 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
             ).fetchall()
         else:
             ext_rows = conn.execute(
-                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "SELECT r.id, r.original_filename, r.result_json, r.project_id, r.created_at, r.pushed_at, "
                 "COALESCE(p.name, '') AS project_name "
                 "FROM extraction_results r "
                 "LEFT JOIN projects p ON r.project_id = p.id "
@@ -837,7 +837,7 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
                 (web_user_id,),
             ).fetchall()
             tra_rows = conn.execute(
-                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "SELECT r.id, r.original_filename, r.result_json, r.project_id, r.created_at, r.pushed_at, "
                 "COALESCE(p.name, '') AS project_name "
                 "FROM transcription_results r "
                 "LEFT JOIN projects p ON r.project_id = p.id "
@@ -861,6 +861,7 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
     for row in all_rows:
         pid = row.get("project_id")
         pname = row.get("project_name", "") or "未归类"
+        meeting_name = row.get("original_filename", "") or ""
 
         if pid:
             project_set.add(pid)
@@ -908,7 +909,8 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
                 "owners": owners,
                 "end_time": end_display if end_display else "",
                 "status": "expired" if is_expired else "active",
-                "source": pname,
+                "project_name": pname,
+                "meeting_name": meeting_name,
             }
             all_schedules.append(schedule_entry)
 
@@ -934,7 +936,7 @@ def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) ->
                 "name": name,
                 "meeting_count": count,
                 "schedule_count": sum(
-                    1 for s in all_schedules if s["source"] == name
+                    1 for s in all_schedules if s["project_name"] == name
                 ),
                 "last_meeting": project_last.get(name),
             }

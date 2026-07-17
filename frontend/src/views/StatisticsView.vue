@@ -101,6 +101,7 @@
               <th>日程标题</th>
               <th>负责人</th>
               <th>截止时间</th>
+              <th>所属会议</th>
               <th>所属项目</th>
               <th class="col-status">状态</th>
             </tr>
@@ -110,7 +111,8 @@
               <td>{{ s.title || '(无标题)' }}</td>
               <td>{{ s.owners.join('、') || '-' }}</td>
               <td>{{ s.end_time || '-' }}</td>
-              <td>{{ s.source }}</td>
+              <td>{{ s.meeting_name || '-' }}</td>
+              <td>{{ s.project_name }}</td>
               <td class="col-status">
                 <span :class="['status-badge', s.status === 'active' ? 'status-active' : 'status-expired']">
                   {{ s.status === 'active' ? '进行中' : '已过期' }}
