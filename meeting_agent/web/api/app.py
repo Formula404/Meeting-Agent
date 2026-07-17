@@ -151,6 +151,33 @@ def _reserve_pdf_name(original_name: str) -> str:
     raise RuntimeError(f"无法为 PDF 创建唯一文件名: {safe}")
 
 
+def _reserve_docx_name(original_name: str) -> str:
+    """Atomically reserve a .docx filename on disk, same pattern as PDF."""
+    stem = Path(original_name).stem
+    safe = "".join(c for c in stem if c not in '\\/:*?"<>|').strip() or "文件"
+    if len(safe) > 120:
+        safe = safe[:120]
+
+    def _try(name: str) -> bool:
+        try:
+            (INPUT_DIR / name).open("xb").close()
+            return True
+        except FileExistsError:
+            return False
+
+    candidate = f"{safe}.docx"
+    if _try(candidate):
+        return candidate
+    for counter in range(2, 1000):
+        candidate = f"{safe}_{counter}.docx"
+        if _try(candidate):
+            return candidate
+    candidate = f"{safe}_{uuid.uuid4().hex[:8]}.docx"
+    if _try(candidate):
+        return candidate
+    raise RuntimeError(f"无法为 docx 创建唯一文件名: {safe}")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Extraction & Results
 # ═══════════════════════════════════════════════════════════════════════
@@ -166,8 +193,8 @@ def extract(
     if not file.filename or not file.filename.endswith(".docx"):
         raise HTTPException(400, "仅支持 .docx 文件")
 
-    # Save uploaded docx
-    stored_filename = f"{uuid.uuid4().hex}_{file.filename}"
+    # Save uploaded docx (collision-safe, same pattern as PDF)
+    stored_filename = _reserve_docx_name(file.filename)
     input_path = INPUT_DIR / stored_filename
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -186,7 +213,7 @@ def extract(
         "extract_docx",
         {
             "input_path": str(input_path),
-            "original_filename": file.filename,
+            "original_filename": stored_filename,
             "pdf_filename": pdf_filename,
         },
         web_user_id=current_user["id"],
