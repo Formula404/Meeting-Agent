@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from meeting_agent.web.api.app import router
 from meeting_agent.web.api.transcription_routes import router as transcription_router
+from meeting_agent.web.api.statistics_routes import router as statistics_router
 
 app = FastAPI(title="Meeting Agent", docs_url="/api/docs")
 
@@ -23,6 +24,7 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(transcription_router)
+app.include_router(statistics_router)
 
 # Serve built frontend (from `frontend/dist/`) in production
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

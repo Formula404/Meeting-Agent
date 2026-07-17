@@ -72,6 +72,12 @@ const routes = [
     component: () => import('./views/TemplateEditorView.vue'),
     meta: { title: '编辑模板' },
   },
+  {
+    path: '/stats',
+    name: 'stats',
+    component: () => import('./views/StatisticsView.vue'),
+    meta: { title: '数据统计' },
+  },
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })

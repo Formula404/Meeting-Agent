@@ -322,18 +322,22 @@ def list_results(web_user_id: Optional[int] = None, is_admin: bool = False) -> L
             rows = conn.execute(
                 "SELECT r.id, r.original_filename, r.pdf_filename, r.status, "
                 "r.created_at, r.updated_at, r.pushed_at, "
+                "r.project_id, COALESCE(p.name, '') AS project_name, "
                 "COALESCE(u.username, '') AS operator_name "
                 "FROM extraction_results r "
                 "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "LEFT JOIN projects p ON r.project_id = p.id "
                 "ORDER BY r.created_at DESC"
             ).fetchall()
         elif web_user_id is not None:
             rows = conn.execute(
                 "SELECT r.id, r.original_filename, r.pdf_filename, r.status, "
                 "r.created_at, r.updated_at, r.pushed_at, "
+                "r.project_id, COALESCE(p.name, '') AS project_name, "
                 "COALESCE(u.username, '') AS operator_name "
                 "FROM extraction_results r "
                 "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "LEFT JOIN projects p ON r.project_id = p.id "
                 "WHERE r.web_user_id = %s ORDER BY r.created_at DESC",
                 (web_user_id,),
             ).fetchall()
@@ -442,18 +446,22 @@ def list_transcription_results(web_user_id: Optional[int] = None, is_admin: bool
             rows = conn.execute(
                 "SELECT r.id, r.original_filename, r.status, "
                 "r.created_at, r.updated_at, r.pushed_at, "
+                "r.project_id, COALESCE(p.name, '') AS project_name, "
                 "COALESCE(u.username, '') AS operator_name "
                 "FROM transcription_results r "
                 "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "LEFT JOIN projects p ON r.project_id = p.id "
                 "ORDER BY r.created_at DESC"
             ).fetchall()
         elif web_user_id is not None:
             rows = conn.execute(
                 "SELECT r.id, r.original_filename, r.status, "
                 "r.created_at, r.updated_at, r.pushed_at, "
+                "r.project_id, COALESCE(p.name, '') AS project_name, "
                 "COALESCE(u.username, '') AS operator_name "
                 "FROM transcription_results r "
                 "LEFT JOIN web_users u ON r.web_user_id = u.id "
+                "LEFT JOIN projects p ON r.project_id = p.id "
                 "WHERE r.web_user_id = %s ORDER BY r.created_at DESC",
                 (web_user_id,),
             ).fetchall()
@@ -718,6 +726,246 @@ def delete_template(template_id: str) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+# ── Projects ──────────────────────────────────────────────────────────────
+
+def create_project(name: str, description: str, web_user_id: int) -> Dict[str, Any]:
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO projects (name, description, web_user_id) VALUES (%s, %s, %s) RETURNING id",
+            (name.strip(), description.strip(), web_user_id),
+        )
+        conn.commit()
+        row_id = cur.fetchone()["id"]
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (row_id,)).fetchone()
+        return dict(row)
+    except UniqueViolation:
+        conn.rollback()
+        raise ValueError("该项目名称已存在")
+    finally:
+        conn.close()
+
+
+def list_projects(web_user_id: int) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM projects WHERE web_user_id = %s ORDER BY updated_at DESC",
+            (web_user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def update_project(project_id: int, name: str, description: str) -> Dict[str, Any]:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "UPDATE projects SET name=%s, description=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
+            (name.strip(), description.strip(), project_id),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
+        if not row:
+            raise ValueError(f"项目 id={project_id} 不存在")
+        return dict(row)
+    except UniqueViolation:
+        conn.rollback()
+        raise ValueError("该项目名称已存在")
+    finally:
+        conn.close()
+
+
+def delete_project(project_id: int) -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+_RESULT_TABLES = {"extraction": "extraction_results", "transcription": "transcription_results"}
+
+
+def update_result_project(result_type: str, result_id: str, project_id: Optional[int]) -> bool:
+    """Set or clear project association on a result."""
+    table = _RESULT_TABLES[result_type]  # KeyError if unknown type
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            f"UPDATE {table} SET project_id=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s",
+            (project_id, result_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_statistics(web_user_id: Optional[int] = None, is_admin: bool = False) -> Dict[str, Any]:
+    """Aggregate statistics across pushed extraction and transcription results."""
+    conn = get_connection()
+    try:
+        # Query pushed results with project info
+        if is_admin:
+            ext_rows = conn.execute(
+                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "COALESCE(p.name, '') AS project_name "
+                "FROM extraction_results r "
+                "LEFT JOIN projects p ON r.project_id = p.id "
+                "WHERE r.status = 'pushed'"
+            ).fetchall()
+            tra_rows = conn.execute(
+                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "COALESCE(p.name, '') AS project_name "
+                "FROM transcription_results r "
+                "LEFT JOIN projects p ON r.project_id = p.id "
+                "WHERE r.status = 'pushed'"
+            ).fetchall()
+        else:
+            ext_rows = conn.execute(
+                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "COALESCE(p.name, '') AS project_name "
+                "FROM extraction_results r "
+                "LEFT JOIN projects p ON r.project_id = p.id "
+                "WHERE r.status = 'pushed' AND r.web_user_id = %s",
+                (web_user_id,),
+            ).fetchall()
+            tra_rows = conn.execute(
+                "SELECT r.id, r.result_json, r.project_id, r.created_at, r.pushed_at, "
+                "COALESCE(p.name, '') AS project_name "
+                "FROM transcription_results r "
+                "LEFT JOIN projects p ON r.project_id = p.id "
+                "WHERE r.status = 'pushed' AND r.web_user_id = %s",
+                (web_user_id,),
+            ).fetchall()
+    finally:
+        conn.close()
+
+    now = datetime.now()
+    all_rows = list(ext_rows) + list(tra_rows)
+
+    total_meetings = len(all_rows)
+    project_set: set = set()
+    project_meetings: Dict[str, int] = {}
+    project_last: Dict[str, datetime] = {}
+
+    all_schedules: List[Dict[str, Any]] = []
+    person_tasks: Dict[str, Dict[str, int]] = {}  # name -> {active, expired}
+
+    for row in all_rows:
+        pid = row.get("project_id")
+        pname = row.get("project_name", "") or "未归类"
+
+        if pid:
+            project_set.add(pid)
+        project_meetings[pname] = project_meetings.get(pname, 0) + 1
+        created = row.get("created_at")
+        if isinstance(created, datetime):
+            if pname not in project_last or created > project_last[pname]:
+                project_last[pname] = created
+
+        try:
+            data = json.loads(row["result_json"]) if isinstance(row["result_json"], str) else row["result_json"]
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        schedules = data.get("schedules", []) or []
+        for s in schedules:
+            title = s.get("title", "")
+            owners = s.get("owner", []) or []
+            end_raw = s.get("end_time", "")
+
+            is_expired = False
+            end_display = ""
+            if end_raw:
+                try:
+                    end_dt = None
+                    if isinstance(end_raw, (int, float)):
+                        end_dt = datetime.fromtimestamp(end_raw)
+                        end_display = end_dt.strftime("%Y-%m-%d %H:%M")
+                    elif isinstance(end_raw, str) and end_raw.strip():
+                        end_str = end_raw.strip()
+                        end_display = end_str
+                        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                            try:
+                                end_dt = datetime.strptime(end_str[:16] if len(end_str) >= 16 else end_str[:10], fmt)
+                                break
+                            except ValueError:
+                                continue
+                    if end_dt and end_dt <= now:
+                        is_expired = True
+                except (ValueError, IndexError, OSError):
+                    pass
+
+            schedule_entry = {
+                "title": title,
+                "owners": owners,
+                "end_time": end_display if end_display else "",
+                "status": "expired" if is_expired else "active",
+                "source": pname,
+            }
+            all_schedules.append(schedule_entry)
+
+            for owner in owners:
+                if not owner:
+                    continue
+                if owner not in person_tasks:
+                    person_tasks[owner] = {"active": 0, "expired": 0, "total": 0}
+                person_tasks[owner]["total"] += 1
+                if is_expired:
+                    person_tasks[owner]["expired"] += 1
+                else:
+                    person_tasks[owner]["active"] += 1
+
+    total_schedules = len(all_schedules)
+    active_schedules = sum(1 for s in all_schedules if s["status"] == "active")
+    expired_schedules = sum(1 for s in all_schedules if s["status"] == "expired")
+
+    # Project breakdown
+    project_stats = sorted(
+        [
+            {
+                "name": name,
+                "meeting_count": count,
+                "schedule_count": sum(
+                    1 for s in all_schedules if s["source"] == name
+                ),
+                "last_meeting": project_last.get(name),
+            }
+            for name, count in project_meetings.items()
+        ],
+        key=lambda x: x["meeting_count"],
+        reverse=True,
+    )
+
+    # Person breakdown
+    person_stats = sorted(
+        [
+            {"name": name, **counts}
+            for name, counts in person_tasks.items()
+        ],
+        key=lambda x: x["total"],
+        reverse=True,
+    )
+
+    return {
+        "overview": {
+            "total_meetings": total_meetings,
+            "total_projects": len(project_set),
+            "total_schedules": total_schedules,
+            "active_schedules": active_schedules,
+            "expired_schedules": expired_schedules,
+        },
+        "project_stats": project_stats,
+        "person_stats": person_stats,
+        "schedules": all_schedules,
+    }
 
 
 def _decode_task_row(row: Dict[str, Any]) -> Dict[str, Any]:

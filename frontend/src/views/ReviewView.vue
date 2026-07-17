@@ -184,6 +184,26 @@
         ></textarea>
       </div>
 
+      <!-- Project selector -->
+      <div class="card">
+        <label class="form-label" style="margin:0 0 8px">关联项目（选填）</label>
+        <div class="project-row">
+          <select class="form-select" v-model="selectedProjectId" style="flex:1">
+            <option :value="0">不关联项目</option>
+            <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+          <span class="project-or">或</span>
+          <input
+            class="form-input"
+            v-model="newProjectName"
+            placeholder="输入新项目名快速创建"
+            style="flex:1"
+            @keydown.enter.prevent="createAndSelectProject"
+          />
+          <button class="btn btn-outline btn-sm" @click="createAndSelectProject" :disabled="!newProjectName.trim()">新建</button>
+        </div>
+      </div>
+
       <!-- Actions -->
       <div class="action-bar">
         <button class="btn btn-primary" @click="save" :disabled="saving">
@@ -293,6 +313,30 @@ const userSuggestions = ref([])
 const deptSuggestions = ref([])
 const filename = ref('')
 
+const projects = ref([])
+const selectedProjectId = ref(0)
+const newProjectName = ref('')
+
+async function loadProjects() {
+  try {
+    projects.value = await api.listProjects()
+  } catch (_) { /* non-critical */ }
+}
+
+async function createAndSelectProject() {
+  const name = newProjectName.value.trim()
+  if (!name) return
+  try {
+    const proj = await api.createProject(name)
+    projects.value.unshift(proj)
+    selectedProjectId.value = proj.id
+    newProjectName.value = ''
+  } catch (e) {
+    flash.value = e.message || '创建项目失败'
+    flashType.value = 'flash-error'
+  }
+}
+
 const ERROR_MESSAGES = {
   81013: '推送目标无效或无权限：UserID、部门ID、标签ID全部非法或不可用。',
   40003: '无效的 UserID：至少有一个接收人不存在或无权限。',
@@ -318,6 +362,8 @@ onMounted(async () => {
       api.listUsers().catch(() => []),
       api.listDepartments().catch(() => []),
     ])
+    await loadProjects()
+    selectedProjectId.value = res.project_id || 0
     result.value = res
     filename.value = res.original_filename
     pdfFilename.value = res.pdf_filename || ''
@@ -514,7 +560,7 @@ async function push() {
   try {
     // Save first, then push
     await api.updateResult(route.params.id, buildSavePayload())
-    const resp = await api.pushResult(route.params.id)
+    const resp = await api.pushResultWithProject(route.params.id, selectedProjectId.value)
     flash.value = '推送成功！消息和日程已发送到企业微信'
     flashType.value = 'flash-success'
     // Refresh to update status badge
@@ -603,5 +649,32 @@ async function push() {
     width: 40px;
     height: 40px;
   }
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.project-or {
+  font-size: var(--text-xs);
+  color: var(--gray-400);
+  flex-shrink: 0;
+}
+
+.form-select {
+  padding: 6px 10px;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  color: var(--gray-800);
+  outline: none;
+}
+
+.form-select:focus {
+  border-color: var(--primary-400);
+  box-shadow: 0 0 0 3px var(--primary-100);
 }
 </style>

@@ -323,4 +323,39 @@ export default {
     form.append('file', docxFile)
     return request('/templates/generate-prompt', { method: 'POST', body: form })
   },
+
+  // ── Projects ──
+  listProjects() {
+    return request('/projects')
+  },
+
+  createProject(name, description = '') {
+    return request('/projects', { method: 'POST', body: { name, description } })
+  },
+
+  updateProject(id, name, description = '') {
+    return request(`/projects/${id}`, { method: 'PUT', body: { name, description } })
+  },
+
+  deleteProject(id) {
+    return request(`/projects/${id}`, { method: 'DELETE' })
+  },
+
+  // ── Statistics ──
+  getStatistics() {
+    return request('/statistics')
+  },
+
+  getProjectStatistics(projectId) {
+    return request(`/statistics/project/${projectId}`)
+  },
+
+  // ── Push with project ──
+  pushResultWithProject(id, projectId) {
+    return request(`/results/${id}/push`, { method: 'POST', body: { project_id: projectId } })
+  },
+
+  pushTranscriptionWithProject(id, projectId) {
+    return request(`/transcribe/${id}/push`, { method: 'POST', body: { project_id: projectId } })
+  },
 }

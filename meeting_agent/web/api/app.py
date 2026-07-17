@@ -52,6 +52,7 @@ from meeting_agent.web.models import (
     update_department,
     update_pdf_filename,
     update_result,
+    update_result_project,
     update_template,
     update_user,
 )
@@ -507,9 +508,14 @@ def api_generate_style_prompt(
 #  Push to WeCom
 # ═══════════════════════════════════════════════════════════════════════
 
+class PushBody(BaseModel):
+    project_id: Optional[int] = None
+
+
 @router.post("/results/{result_id}/push")
 def push_result(
     result_id: str,
+    body: PushBody = PushBody(),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Convert and push the result to WeChat Work (message + schedules)."""
@@ -565,6 +571,12 @@ def push_result(
             schedule_responses = create_meeting_schedules_from_result(push_data) or []
         except Exception as e:
             schedule_responses = [{"error": str(e)}]
+
+    # Update project association if provided (before marking pushed).
+    # project_id=0 means "clear association" (set to NULL).
+    if body.project_id is not None:
+        pid = body.project_id if body.project_id > 0 else None
+        update_result_project("extraction", result_id, pid)
 
     mark_result_pushed(result_id)
 

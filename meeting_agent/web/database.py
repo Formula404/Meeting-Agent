@@ -181,6 +181,16 @@ def init_db() -> None:
             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
             "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
         )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS projects ("
+            "id SERIAL PRIMARY KEY, "
+            "name TEXT NOT NULL, "
+            "description TEXT DEFAULT '', "
+            "web_user_id INTEGER NOT NULL REFERENCES web_users(id) ON DELETE CASCADE, "
+            "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+            "UNIQUE(name, web_user_id))"
+        )
         cur.close()
         # Migrations: add columns if missing (existing DB)
         # Use information_schema checks to avoid transaction-abort from DuplicateColumn
@@ -239,6 +249,28 @@ def init_db() -> None:
         )
         if not cur.fetchone():
             cur.execute("ALTER TABLE background_tasks ADD COLUMN template_id TEXT")
+
+        # project_id on extraction_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='extraction_results' AND column_name='project_id'"
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "ALTER TABLE extraction_results ADD COLUMN project_id INTEGER "
+                "REFERENCES projects(id) ON DELETE SET NULL"
+            )
+
+        # project_id on transcription_results
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='transcription_results' AND column_name='project_id'"
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "ALTER TABLE transcription_results ADD COLUMN project_id INTEGER "
+                "REFERENCES projects(id) ON DELETE SET NULL"
+            )
 
         cur.close()
         conn.commit()

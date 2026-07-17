@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -27,6 +27,7 @@ from meeting_agent.web.models import (
     list_transcription_results,
     list_users,
     list_departments,
+    update_result_project,
     update_transcription_result,
     mark_transcription_result_pushed,
 )
@@ -402,9 +403,14 @@ def parse_transcription_result(
     }
 
 
+class TranscribePushBody(BaseModel):
+    project_id: Optional[int] = None
+
+
 @router.post("/transcribe/{result_id}/push")
 def push_transcription_result(
     result_id: str,
+    body: TranscribePushBody = TranscribePushBody(),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """推送转录处理结果到企业微信（复用现有推送流程）。"""
@@ -448,6 +454,12 @@ def push_transcription_result(
             schedule_responses = create_meeting_schedules_from_result(push_data) or []
         except Exception as e:
             schedule_responses = [{"error": str(e)}]
+
+    # Update project association if provided (before marking pushed).
+    # project_id=0 means "clear association" (set to NULL).
+    if body.project_id is not None:
+        pid = body.project_id if body.project_id > 0 else None
+        update_result_project("transcription", result_id, pid)
 
     mark_transcription_result_pushed(result_id)
 
