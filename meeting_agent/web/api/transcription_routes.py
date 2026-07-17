@@ -41,20 +41,32 @@ PDF_DIR = Path("data/input/pdfs")
 
 
 def _make_pdf_filename(result_json: Dict[str, Any], fallback_stem: str) -> str:
-    """Generate a clean PDF filename, collision-safe without UUID prefix."""
+    """Generate a clean PDF filename and atomically reserve it on disk."""
     meeting_name = (result_json.get("meeting_name", "") or "").strip()
     base = meeting_name if meeting_name else fallback_stem
     safe = "".join(c for c in base if c not in '\\/:*?"<>|').strip() or "会议纪要"
+    if len(safe) > 120:
+        safe = safe[:120]
+
+    def _try_reserve(name: str) -> bool:
+        try:
+            (PDF_DIR / name).open("xb").close()
+            return True
+        except FileExistsError:
+            return False
+
     candidate = f"{safe}.pdf"
-    output_path = PDF_DIR / candidate
-    if not output_path.exists():
+    if _try_reserve(candidate):
         return candidate
-    counter = 2
-    while True:
+    for counter in range(2, 1000):
         candidate = f"{safe}_{counter}.pdf"
-        if not (PDF_DIR / candidate).exists():
+        if _try_reserve(candidate):
             return candidate
-        counter += 1
+    # Last resort: short random suffix (only when 1000 names already exist)
+    candidate = f"{safe}_{uuid.uuid4().hex[:8]}.pdf"
+    if _try_reserve(candidate):
+        return candidate
+    raise RuntimeError(f"无法为 PDF 创建唯一文件名: {safe}")
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ASR_AUDIO_DIR.mkdir(parents=True, exist_ok=True)

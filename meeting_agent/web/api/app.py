@@ -124,6 +124,33 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _reserve_pdf_name(original_name: str) -> str:
+    """Atomically reserve a PDF filename, collision-safe without UUID prefix."""
+    stem = Path(original_name).stem
+    safe = "".join(c for c in stem if c not in '\\/:*?"<>|').strip() or "文件"
+    if len(safe) > 120:
+        safe = safe[:120]
+
+    def _try(name: str) -> bool:
+        try:
+            (PDF_DIR / name).open("xb").close()
+            return True
+        except FileExistsError:
+            return False
+
+    candidate = f"{safe}.pdf"
+    if _try(candidate):
+        return candidate
+    for counter in range(2, 1000):
+        candidate = f"{safe}_{counter}.pdf"
+        if _try(candidate):
+            return candidate
+    candidate = f"{safe}_{uuid.uuid4().hex[:8]}.pdf"
+    if _try(candidate):
+        return candidate
+    raise RuntimeError(f"无法为 PDF 创建唯一文件名: {safe}")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Extraction & Results
 # ═══════════════════════════════════════════════════════════════════════
@@ -145,17 +172,13 @@ def extract(
     with input_path.open("wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    # Save optional PDF
+    # Save optional PDF (collision-safe without UUID prefix in normal case)
     pdf_filename = ""
     if pdf_file and pdf_file.filename:
         if not pdf_file.filename.endswith(".pdf"):
             raise HTTPException(400, "PDF 文件格式不正确")
-        pdf_filename = pdf_file.filename
+        pdf_filename = _reserve_pdf_name(pdf_file.filename)
         pdf_path = PDF_DIR / pdf_filename
-        if pdf_path.exists():
-            stem = Path(pdf_file.filename).stem
-            pdf_filename = f"{stem}_{uuid.uuid4().hex[:4]}.pdf"
-            pdf_path = PDF_DIR / pdf_filename
         with pdf_path.open("wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
 
@@ -338,13 +361,9 @@ async def upload_pdf(
     if not pdf_file.filename or not pdf_file.filename.endswith(".pdf"):
         raise HTTPException(400, "仅支持 .pdf 文件")
 
-    # Save PDF, only add short suffix on collision
-    pdf_filename = pdf_file.filename
+    # Save PDF (collision-safe without UUID prefix in normal case)
+    pdf_filename = _reserve_pdf_name(pdf_file.filename)
     pdf_path = PDF_DIR / pdf_filename
-    if pdf_path.exists():
-        stem = Path(pdf_file.filename).stem
-        pdf_filename = f"{stem}_{uuid.uuid4().hex[:4]}.pdf"
-        pdf_path = PDF_DIR / pdf_filename
     with pdf_path.open("wb") as f:
         shutil.copyfileobj(pdf_file.file, f)
 
