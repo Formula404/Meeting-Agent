@@ -103,6 +103,7 @@ def run_transcription_extraction(
 
     return {
         "meeting": meeting_text,
+        "meeting_name": meeting_name or "",
         "meeting_date": "",
         "push_dept": [],
         "push_user": [],

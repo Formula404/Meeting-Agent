@@ -150,9 +150,12 @@ def extract(
     if pdf_file and pdf_file.filename:
         if not pdf_file.filename.endswith(".pdf"):
             raise HTTPException(400, "PDF 文件格式不正确")
-        # Prefix with result id to avoid collisions
-        pdf_filename = f"{uuid.uuid4().hex}_{pdf_file.filename}"
+        pdf_filename = pdf_file.filename
         pdf_path = PDF_DIR / pdf_filename
+        if pdf_path.exists():
+            stem = Path(pdf_file.filename).stem
+            pdf_filename = f"{stem}_{uuid.uuid4().hex[:4]}.pdf"
+            pdf_path = PDF_DIR / pdf_filename
         with pdf_path.open("wb") as f:
             shutil.copyfileobj(pdf_file.file, f)
 
@@ -335,9 +338,13 @@ async def upload_pdf(
     if not pdf_file.filename or not pdf_file.filename.endswith(".pdf"):
         raise HTTPException(400, "仅支持 .pdf 文件")
 
-    # Save PDF with unique name to avoid collisions
-    pdf_filename = f"{uuid.uuid4().hex}_{pdf_file.filename}"
+    # Save PDF, only add short suffix on collision
+    pdf_filename = pdf_file.filename
     pdf_path = PDF_DIR / pdf_filename
+    if pdf_path.exists():
+        stem = Path(pdf_file.filename).stem
+        pdf_filename = f"{stem}_{uuid.uuid4().hex[:4]}.pdf"
+        pdf_path = PDF_DIR / pdf_filename
     with pdf_path.open("wb") as f:
         shutil.copyfileobj(pdf_file.file, f)
 

@@ -13,6 +13,7 @@ class ScheduleItem(BaseModel):
 
 
 class MeetingOutput(BaseModel):
+    meeting_name: str = Field(default="", description="会议名称（选填）")
     meeting_date: str = Field(default="", description="会议时间")
     push_dept: List[str] = Field(default_factory=list, description="需要推送会议纪要的部门")
     push_user: List[str] = Field(default_factory=list, description="需要推送会议纪要的用户")

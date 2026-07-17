@@ -38,6 +38,23 @@ INPUT_DIR = Path("data/input/transcriptions")
 OUTPUT_DIR = Path("data/output")
 ASR_AUDIO_DIR = INPUT_DIR / "audio"
 PDF_DIR = Path("data/input/pdfs")
+
+
+def _make_pdf_filename(result_json: Dict[str, Any], fallback_stem: str) -> str:
+    """Generate a clean PDF filename, collision-safe without UUID prefix."""
+    meeting_name = (result_json.get("meeting_name", "") or "").strip()
+    base = meeting_name if meeting_name else fallback_stem
+    safe = "".join(c for c in base if c not in '\\/:*?"<>|').strip() or "会议纪要"
+    candidate = f"{safe}.pdf"
+    output_path = PDF_DIR / candidate
+    if not output_path.exists():
+        return candidate
+    counter = 2
+    while True:
+        candidate = f"{safe}_{counter}.pdf"
+        if not (PDF_DIR / candidate).exists():
+            return candidate
+        counter += 1
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ASR_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,8 +331,10 @@ def generate_transcription_pdf(
     if not meeting_html and not meeting_text:
         raise HTTPException(400, "会议纪要内容为空，无法生成 PDF")
 
-    stem = Path(record["original_filename"]).stem
-    pdf_filename = f"{uuid.uuid4().hex}_{stem}.pdf"
+    pdf_filename = _make_pdf_filename(
+        result_data,
+        fallback_stem=Path(record["original_filename"]).stem,
+    )
     output_path = PDF_DIR / pdf_filename
 
     try:
